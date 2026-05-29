@@ -103,3 +103,23 @@ class BaseAgent:
             tool_descriptions.append(f"- {name}: {description}")
 
         return "\n".join(tool_descriptions)
+
+
+class AgentError(Exception):
+    """Agent 基础异常类"""
+    pass
+
+
+class NeedsClarificationError(AgentError):
+    """Agent 需要用户澄清时抛出的异常"""
+
+    def __init__(self, question: str, options: Optional[List[str]] = None):
+        self.question = question
+        self.options = options
+        super().__init__(question)
+
+    def __str__(self) -> str:
+        if self.options:
+            options_str = ", ".join(self.options)
+            return f"{self.question} (选项: {options_str})"
+        return self.question

@@ -158,3 +158,26 @@ class TestBaseAgent:
 
         assert "tool1" in formatted
         assert "tool2" in formatted
+
+
+def test_agent_error():
+    """测试 AgentError 基础异常"""
+    from i3d_agent.agents.base import AgentError
+
+    with pytest.raises(AgentError) as exc_info:
+        raise AgentError("Test error")
+    assert str(exc_info.value) == "Test error"
+
+
+def test_needs_clarification_error():
+    """测试 NeedsClarificationError 异常"""
+    from i3d_agent.agents.base import NeedsClarificationError
+
+    error = NeedsClarificationError(
+        question="请指定搜索类型",
+        options=["3d", "2d", "text"]
+    )
+
+    assert error.question == "请指定搜索类型"
+    assert error.options == ["3d", "2d", "text"]
+    assert "请指定搜索类型" in str(error)

@@ -1,6 +1,11 @@
 """Agent module for i3d-agent-system."""
 
-from i3d_agent.agents.base import AgentConfig, BaseAgent
+from i3d_agent.agents.base import (
+    AgentConfig,
+    BaseAgent,
+    AgentError,
+    NeedsClarificationError,
+)
 from i3d_agent.agents.process import ProcessAgent
 from i3d_agent.agents.rag import RAGAgent
 from i3d_agent.agents.search import SearchAgent
@@ -13,4 +18,6 @@ __all__ = [
     "RAGAgent",
     "SearchAgent",
     "SupervisorAgent",
+    "AgentError",
+    "NeedsClarificationError",
 ]
