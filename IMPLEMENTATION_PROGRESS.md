@@ -326,19 +326,124 @@ i3d_agent/
 
 ---
 
-## Phase 5: Agent 实现
+## Phase 5: Agent 实现 ✅
 
-**状态**: 待执行
+**完成时间**: 2026-05-29
+**状态**: 已完成
 
 ### 任务清单
 
 | 任务 | 描述 | 提交哈希 | 状态 |
 |------|------|----------|------|
-| 5.1 | Agent 基类 | - | ⏳ |
-| 5.2 | Supervisor Agent | - | ⏳ |
-| 5.3 | Search Agent | - | ⏳ |
-| 5.4 | RAG Agent | - | ⏳ |
-| 5.5 | Process Agent | - | ⏳ |
+| 5.1 | Agent 基类 | `d035480` | ✅ |
+| 5.2 | Supervisor Agent | `55b9885` | ✅ |
+| 5.3 | Search Agent | `9407feb` | ✅ |
+| 5.4 | RAG Agent | `72d0bbe` | ✅ |
+| 5.5 | Process Agent | `1c8a6d4` | ✅ |
+
+### 完成内容
+
+#### Task 5.1: Agent 基类
+
+**文件**: `i3d_agent/agents/base.py` (3,228 bytes)
+
+创建的类：
+- `AgentConfig` (Pydantic v2): name, role, instructions, llm_model, temperature (0.0-2.0)
+- `BaseAgent`: 基础 Agent 类
+  - `__init__(config, tools)` - 初始化
+  - `add_tool(tool)` - 添加工具
+  - `get_system_prompt()` - 构建系统提示
+  - `_format_tools()` - 格式化工具列表
+
+**测试**: `tests/test_agents/test_base.py` (5,434 bytes)
+- 12 个测试全部通过
+
+---
+
+#### Task 5.2: Supervisor Agent
+
+**文件**: `i3d_agent/agents/supervisor.py` (5,524 bytes)
+
+创建的类：
+- `SupervisorAgent`: 任务协调与路由
+  - `analyze_intent(query)` - 分析用户意图（关键词匹配）
+  - `format_search_response(results, query)` - 格式化搜索响应
+  - `format_rag_response(answer, sources)` - 格式化 RAG 响应
+  - `format_process_response(status)` - 格式化处理状态响应
+  - `format_general_response(messages)` - 格式化一般响应
+
+**路由规则**:
+- Search: "搜索", "查找", "相似", "匹配", "推荐"
+- RAG: "文档", "手册", "教程", "api", "使用", "如何", "怎么"
+- Process: "处理", "状态", "进度", "任务"
+
+**测试**: `tests/test_agents/test_supervisor.py` (8,725 bytes)
+- 18 个测试全部通过
+
+---
+
+#### Task 5.3: Search Agent
+
+**文件**: `i3d_agent/agents/search.py` (7,743 bytes)
+
+创建的类：
+- `SearchAgent`: 3D/2D 模型搜索专家
+  - `search(query, search_type, params, tenant_id)` - 执行搜索
+  - `get_details(item_code, tenant_id)` - 获取模型详情
+  - 支持 3d, 2d, text 三种搜索类型
+
+**工具集成**: search_3d_model, search_2d_image, filter_by_attributes, get_model_details
+
+**测试**: `tests/test_agents/test_search.py` (10,615 bytes)
+- 14 个测试通过，1 个跳过
+
+---
+
+#### Task 5.4: RAG Agent
+
+**文件**: `i3d_agent/agents/rag.py` (8,223 bytes)
+
+创建的类：
+- `RAGAgent`: 技术文档问答专家
+  - `answer(question, tenant_id)` - 回答问题（当前为 stub 实现）
+  - `get_api_info()` - 获取 API 信息
+  - `get_deployment_info()` - 获取部署信息
+  - `get_troubleshooting_info()` - 获取故障排查信息
+
+**工具集成**: retrieve_documents, search_api_reference, get_deployment_guide, find_troubleshooting_steps
+
+**测试**: `tests/test_agents/test_rag.py` (10,454 bytes)
+- 16 个测试通过，1 个跳过
+
+---
+
+#### Task 5.5: Process Agent
+
+**文件**: `i3d_agent/agents/process.py` (7,284 bytes)
+
+创建的类：
+- `ProcessAgent`: 文件处理状态专家
+  - `get_status(task_id, tenant_id)` - 获取任务状态
+  - `get_history(item_code, tenant_id)` - 获取处理历史
+  - `retry(task_id, tenant_id)` - 重试失败任务
+  - `diagnose(error_message, component, tenant_id)` - 诊断错误
+
+**工具集成**: get_task_status, get_processing_history, retry_failed_task, diagnose_error
+
+**测试**: `tests/test_agents/test_process.py` (12,317 bytes)
+- 所有测试通过
+
+---
+
+### Phase 5 总结
+
+| 指标 | 数量 |
+|------|------|
+| 创建 Agent 类 | 5 |
+| 创建配置类 | 1 |
+| 公开方法数 | 25+ |
+| 测试数量 | 75+ |
+| Git 提交数 | 5 |
 
 ---
 
@@ -395,12 +500,12 @@ i3d_agent/
 ## 总体进度
 
 ```
-███████████████████████████████████████████░░░░  88%
+██████████████████████████████████████████████░░  94%
 ├─ Phase 1: 项目设置与基础设施  ✅ 100%
 ├─ Phase 2: 数据模型           ✅ 100%
 ├─ Phase 3: 记忆系统           ✅ 100%
 ├─ Phase 4: 工具实现           ✅ 100%
-├─ Phase 5: Agent 实现         ⏳   0%
+├─ Phase 5: Agent 实现         ✅ 100%
 ├─ Phase 6: LangGraph 工作流   ⏳   0%
 ├─ Phase 7: FastAPI 应用       ⏳   0%
 ├─ Phase 8: Docker 部署        ⏳   0%
@@ -413,10 +518,10 @@ i3d_agent/
 
 | 指标 | 数量 |
 |------|------|
-| 总提交数 | 12 |
-| 总文件数 | 60+ |
-| 总代码行数 | ~4000+ |
-| 测试数量 | 70+ |
+| 总提交数 | 19 |
+| 总文件数 | 70+ |
+| 总代码行数 | ~6000+ |
+| 测试数量 | 140+ |
 | 测试通过率 | 100% |
 
 ---
@@ -424,18 +529,19 @@ i3d_agent/
 ## 最新提交
 
 ```
+1c8a6d4 - feat: add process agent
+72d0bbe - feat: add RAG agent (basic implementation)
+9407feb - feat: add search agent
+55b9885 - feat: add supervisor agent with intent routing
+d035480 - feat: add base agent class
+dc4685b - docs: add README
+052f7c3 - docs: update Phase 4 completion
 a76a5b7 - feat: add process tools
 076eed1 - feat: add RAG tools (stubs)
 eaee6ec - feat: add search tools with 3D/2D model search
 6a46425 - feat: add memory manager with Redis backend
 fb59c14 - docs: update Phase 3 completion
 fbec3ac - docs: add implementation progress tracking document
-e2067df - feat: add task models
-8f0d6fe - feat: add chat models with validation
-d753c25 - chore: add logger and telemetry utilities
-8530f4c - chore: add database schema migration
-0cf8aa5 - chore: add configuration files
-28f9420 - Initial commit: Create i3d_agent package structure
 ```
 
 ---
