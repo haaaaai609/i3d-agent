@@ -11,6 +11,13 @@ from i3d_agent.models.chat import (
     SourceDocument,
     SUPPORTED_TENANTS,
 )
+from i3d_agent.models.task import (
+    AgentTask,
+    TaskCreate,
+    TaskStatus,
+    TaskType,
+    TaskUpdate,
+)
 
 __all__ = [
     "Message",
@@ -18,4 +25,9 @@ __all__ = [
     "SourceDocument",
     "ChatResponse",
     "SUPPORTED_TENANTS",
+    "TaskType",
+    "TaskStatus",
+    "AgentTask",
+    "TaskCreate",
+    "TaskUpdate",
 ]
