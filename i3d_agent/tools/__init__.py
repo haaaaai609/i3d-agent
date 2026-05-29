@@ -12,9 +12,20 @@ from i3d_agent.tools.search_tools import (
     get_model_details,
 )
 
+from i3d_agent.tools.process_tools import (
+    get_task_status,
+    get_processing_history,
+    retry_failed_task,
+    diagnose_error,
+)
+
 __all__ = [
     "search_3d_model",
     "search_2d_image",
     "filter_by_attributes",
     "get_model_details",
+    "get_task_status",
+    "get_processing_history",
+    "retry_failed_task",
+    "diagnose_error",
 ]
