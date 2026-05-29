@@ -11,12 +11,10 @@ __license__ = "MIT"
 
 # Import main components for easier access
 from i3d_agent.config import settings
-from i3d_agent.workflow.graph import I3DWorkflow
 
 __all__ = [
     "__version__",
     "__author__",
     "__license__",
     "settings",
-    "I3DWorkflow",
 ]
