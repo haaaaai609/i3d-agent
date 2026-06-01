@@ -46,6 +46,12 @@ async def aggregator_node(state: WorkflowState) -> WorkflowState:
             response_parts.append(f"任务状态：{status}，进度：{progress}%")
             thought_process_parts.append("查询处理状态")
 
+        elif task.task_type == "general":
+            answer = output.get("answer", "")
+            if answer:
+                response_parts.append(answer)
+            thought_process_parts.append("执行通用对话")
+
     if response_parts:
         state["response"] = "\n\n".join(response_parts)
     else:

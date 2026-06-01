@@ -49,7 +49,12 @@ class Settings(BaseSettings):
     # LLM Provider Settings
     ANTHROPIC_API_KEY: str = Field(default="", description="Anthropic API key")
     OPENAI_API_KEY: str = Field(default="", description="OpenAI API key")
-    DEFAULT_LLM_PROVIDER: str = Field(default="anthropic", description="Default LLM provider")
+    DASHSCOPE_API_KEY: str = Field(default="", description="DashScope API key (Alibaba Cloud)")
+    DASHSCOPE_BASE_URL: str = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        description="DashScope base URL"
+    )
+    DEFAULT_LLM_PROVIDER: str = Field(default="anthropic", description="Default LLM provider (anthropic, openai, dashscope)")
     DEFAULT_LLM_MODEL: str = Field(
         default="claude-3-5-sonnet-20241022",
         description="Default LLM model"
@@ -81,10 +86,15 @@ class Settings(BaseSettings):
 
     # Tenant Settings
     DEFAULT_TENANT: str = Field(default="default", description="Default tenant ID")
-    SUPPORTED_TENANTS: List[str] = Field(
-        default=["default", "tenant1", "tenant2"],
-        description="List of supported tenant IDs"
+    SUPPORTED_TENANTS: str = Field(
+        default="default,tenant1,tenant2",
+        description="List of supported tenant IDs (comma-separated)"
     )
+
+    @property
+    def supported_tenants_list(self) -> List[str]:
+        """Get SUPPORTED_TENANTS as a list."""
+        return [t.strip() for t in self.SUPPORTED_TENANTS.split(",") if t.strip()]
 
     # Observability Settings
     OTEL_EXPORTER_OTLP_ENDPOINT: str = Field(
@@ -125,7 +135,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator("CORS_ORIGINS", "SUPPORTED_TENANTS", mode="before")
+    @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_list_string(cls, v: str | List[str]) -> List[str]:
         """Parse comma-separated string into list."""

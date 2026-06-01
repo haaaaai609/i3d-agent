@@ -1,16 +1,22 @@
 """FastAPI application for I3D Agent System."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from i3d_agent.api.routes.chat import router as chat_router
 from i3d_agent.utils.logger import get_logger
 from i3d_agent.utils.telemetry import instrument_fastapi
 
 logger = get_logger(__name__)
+
+# Static files directory
+STATIC_DIR = Path(__file__).parent.parent.parent / "frontend" / "static"
 
 
 @asynccontextmanager
@@ -50,6 +56,29 @@ def create_app() -> FastAPI:
     async def health_check():
         """健康检查端点。"""
         return {"status": "healthy", "service": "i3d-agent-api"}
+
+    # 根路径 - 重定向到聊天界面
+    @app.get("/")
+    async def root():
+        """根路径 - 返回聊天界面。"""
+        chat_html = STATIC_DIR / "chat.html"
+        if chat_html.exists():
+            return FileResponse(chat_html)
+        return {"message": "I3D Agent System API", "docs": "/docs", "chat": "/chat"}
+
+    # 聊天界面
+    @app.get("/chat")
+    async def chat():
+        """聊天界面。"""
+        chat_html = STATIC_DIR / "chat.html"
+        if chat_html.exists():
+            return FileResponse(chat_html)
+        return {"error": "Chat interface not found"}
+
+    # 静态文件服务
+    if STATIC_DIR.exists():
+        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+        logger.info(f"Serving static files from {STATIC_DIR}")
 
     return app
 

@@ -68,8 +68,9 @@ class I3DWorkflow:
 
         workflow.add_conditional_edges(
             "supervisor",
-            lambda state: "has_tasks" if state.get("sub_tasks") else "no_tasks",
+            lambda state: "complete" if state.get("response") else ("has_tasks" if state.get("sub_tasks") else "no_tasks"),
             {
+                "complete": END,
                 "has_tasks": "dispatcher",
                 "no_tasks": "aggregator",
             },

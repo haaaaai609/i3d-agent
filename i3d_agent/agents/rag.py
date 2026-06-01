@@ -9,6 +9,7 @@ from i3d_agent.tools.rag_tools import (
     get_deployment_guide,
     find_troubleshooting_steps,
 )
+from i3d_agent.llm import get_llm_client, Message
 
 
 class RAGAgent(BaseAgent):
@@ -63,7 +64,7 @@ class RAGAgent(BaseAgent):
 
         super().__init__(config=config, tools=tools)
 
-    def answer(
+    async def answer(
         self,
         question: str,
         tenant_id: Optional[str] = None,
@@ -109,24 +110,49 @@ class RAGAgent(BaseAgent):
             if not docs:
                 return {
                     "question": question,
-                    "answer": "No relevant documents found in the knowledge base.",
+                    "answer": "抱歉，知识库中没有找到相关文档。",
                     "sources": [],
                     "status": "no_results",
                 }
 
-            # Stub implementation - pending full LLM integration
-            # In the full implementation, this would:
-            # 1. Use the retrieved documents as context
-            # 2. Call an LLM to generate a comprehensive answer
-            # 3. Return the answer with citations
+            # Build context from retrieved documents
+            context_parts = []
+            for i, doc in enumerate(docs, 1):
+                title = doc.get("title", "未知文档")
+                content = doc.get("content", doc.get("text", ""))
+                score = doc.get("score", 0)
+                context_parts.append(f"[文档 {i}] {title} (相关度: {score:.2f})\n{content}")
+
+            context = "\n\n".join(context_parts)
+
+            # Generate answer using LLM
+            system_prompt = """你是一个技术文档助手，专门回答关于 3D CAD 系统、搜索服务、部署和故障排查的问题。
+
+请根据提供的文档上下文回答用户问题。如果文档中没有相关信息，请诚实地说明。
+
+回答要求：
+1. 准确、简洁、专业
+2. 引用相关的文档来源
+3. 如果需要步骤，请按顺序列出
+4. 使用中文回答"""
+
+            user_prompt = f"""问题: {question}
+
+相关文档:
+{context}
+
+请根据上述文档回答问题。"""
+
+            llm_client = get_llm_client()
+            answer = await llm_client.generate(
+                messages=[Message(role="user", content=user_prompt)],
+                system_prompt=system_prompt,
+                temperature=0.7,
+            )
 
             return {
                 "question": question,
-                "answer": (
-                    f"This is a stub response for question: {question}. "
-                    "The full RAG implementation will use LLM to generate "
-                    "comprehensive answers based on retrieved documents."
-                ),
+                "answer": answer,
                 "sources": [
                     {
                         "doc_id": doc.get("doc_id"),

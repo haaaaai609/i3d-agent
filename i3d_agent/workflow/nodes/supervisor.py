@@ -13,6 +13,7 @@ async def supervisor_node(state: WorkflowState) -> WorkflowState:
     tenant_id = state["tenant_id"]
     clarification_answer = state.get("clarification_answer")
     sub_tasks: List[SubTask] = state.get("sub_tasks", [])
+    conversation_history = state.get("conversation_history", [])
 
     if clarification_answer and sub_tasks:
         for task in sub_tasks:
@@ -26,28 +27,31 @@ async def supervisor_node(state: WorkflowState) -> WorkflowState:
     if sub_tasks:
         return state
 
-    if is_simple_query(query):
-        supervisor = SupervisorAgent()
-        intent_result = supervisor.analyze_intent(query)
+    supervisor = SupervisorAgent()
+    intent_result = supervisor.analyze_intent(query)
 
-        task = SubTask(
-            task_id=str(uuid.uuid4()),
-            task_type=intent_result["task_type"],
-            agent=intent_result["agent"],
-            status="pending",
-            input_data={"query": query, "tenant_id": tenant_id},
+    # Handle general queries directly with LLM
+    if intent_result["task_type"] == "general":
+        # Generate response directly for general queries
+        response = await supervisor.chat(
+            message=query,
+            conversation_history=conversation_history,
+            tenant_id=tenant_id,
         )
 
-        state["sub_tasks"] = [task]
-    else:
-        task = SubTask(
-            task_id=str(uuid.uuid4()),
-            task_type="search",
-            agent="search_agent",
-            status="pending",
-            input_data={"query": query, "tenant_id": tenant_id},
-        )
+        state["response"] = response.get("answer", "抱歉，无法生成回复。")
+        state["metadata"] = {"agent": "supervisor"}
+        state["should_continue"] = False
+        return state
 
-        state["sub_tasks"] = [task]
+    # Create task for specialized agents
+    task = SubTask(
+        task_id=str(uuid.uuid4()),
+        task_type=intent_result["task_type"],
+        agent=intent_result["agent"],
+        status="pending",
+        input_data={"query": query, "tenant_id": tenant_id},
+    )
 
+    state["sub_tasks"] = [task]
     return state

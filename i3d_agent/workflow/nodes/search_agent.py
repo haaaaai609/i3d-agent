@@ -26,7 +26,7 @@ async def search_agent_node(state: WorkflowState) -> WorkflowState:
         agent = SearchAgent()
         input_data = current_task.input_data
 
-        result = await agent.search(
+        result = agent.search(
             query=input_data.get("query", ""),
             search_type=input_data.get("search_type", "3d"),
             params=input_data.get("params", {}),

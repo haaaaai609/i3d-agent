@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I3D Agent System - 智能助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 95%;
+            max-width: 1200px;
+            height: 90vh;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: #1a1a2e;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .sidebar-header {
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .sidebar-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .sidebar-header p {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 5px;
+        }
+
+        .agent-section {
+            flex: 1;
+        }
+
+        .agent-section h3 {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 15px;
+        }
+
+        .agent-btn {
+            width: 100%;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .agent-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .agent-btn.active {
+            background: #667eea;
+        }
+
+        .agent-btn .icon {
+            font-size: 18px;
+        }
+
+        .agent-btn .label {
+            flex: 1;
+        }
+
+        .agent-btn .badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Settings */
+        .settings {
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .setting-item {
+            margin-bottom: 12px;
+        }
+
+        .setting-item label {
+            display: block;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 4px;
+        }
+
+        .setting-item select,
+        .setting-item input {
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 13px;
+        }
+
+        .setting-item select option {
+            background: #1a1a2e;
+        }
+
+        /* Main Chat Area */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 20px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .chat-header .status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #10b981;
+        }
+
+        .chat-header .status::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Messages */
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f9fafb;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 12px;
+        }
+
+        .message.user .message-content {
+            background: #667eea;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            color: #1f2937;
+            border: 1px solid #e5e7eb;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .message-header .agent-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .agent-badge.search { background: #dbeafe; color: #1e40af; }
+        .agent-badge.rag { background: #fef3c7; color: #92400e; }
+        .agent-badge.process { background: #e0e7ff; color: #3730a3; }
+        .agent-badge.supervisor { background: #f3e8ff; color: #6b21a8; }
+
+        .message-text {
+            line-height: 1.6;
+        }
+
+        .message-text pre {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 10px 0;
+            font-size: 13px;
+        }
+
+        .message-text code {
+            background: #e5e7eb;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        /* Thought Process */
+        .thought-process {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            font-size: 12px;
+        }
+
+        .thought-process summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: #166534;
+        }
+
+        .thought-steps {
+            margin-top: 8px;
+            padding-left: 15px;
+        }
+
+        .thought-step {
+            margin: 4px 0;
+            color: #15803d;
+        }
+
+        /* Sources */
+        .sources {
+            margin-top: 10px;
+        }
+
+        .sources summary {
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+        }
+
+        .sources-list {
+            margin-top: 8px;
+        }
+
+        .source-item {
+            padding: 8px 12px;
+            background: #f3f4f6;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .source-item .title {
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .source-item .score {
+            float: right;
+            color: #10b981;
+        }
+
+        .source-item .chunk {
+            color: #6b7280;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+        /* Input Area */
+        .input-area {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-box {
+            flex: 1;
+            position: relative;
+        }
+
+        #messageInput {
+            width: 100%;
+            min-height: 50px;
+            max-height: 150px;
+            padding: 12px 50px 12px 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            resize: none;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        #messageInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .attach-btn {
+            position: absolute;
+            right: 12px;
+            bottom: 12px;
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 18px;
+            color: #9ca3af;
+            transition: color 0.3s;
+        }
+
+        .attach-btn:hover {
+            color: #667eea;
+        }
+
+        .send-btn {
+            width: 50px;
+            height: 50px;
+            border: none;
+            border-radius: 12px;
+            background: #667eea;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .send-btn:hover {
+            background: #5568d3;
+            transform: scale(1.05);
+        }
+
+        .send-btn:disabled {
+            background: #d1d5db;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Typing Indicator */
+        .typing {
+            display: flex;
+            gap: 4px;
+            padding: 12px 16px;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: #9ca3af;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        /* Welcome Message */
+        .welcome {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .welcome h2 {
+            font-size: 24px;
+            color: #1f2937;
+            margin-bottom: 10px;
+        }
+
+        .welcome p {
+            color: #6b7280;
+            margin-bottom: 30px;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .quick-action {
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .quick-action:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .quick-action .icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .quick-action .label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        /* File Upload Preview */
+        .file-preview {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f3f4f6;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .file-preview .name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-preview .remove {
+            cursor: pointer;
+            color: #ef4444;
+        }
+
+        /* Scrollbar */
+        .messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .messages::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .messages::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 3px;
+        }
+
+        .messages::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>I3D Agent System</h1>
+                <p>智能多代理助手</p>
+            </div>
+
+            <div class="agent-section">
+                <h3>Agent 功能</h3>
+                <button class="agent-btn active" onclick="selectAgent('general')">
+                    <span class="icon">💬</span>
+                    <span class="label">通用对话</span>
+                    <span class="badge">默认</span>
+                </button>
+                <button class="agent-btn" onclick="selectAgent('search')">
+                    <span class="icon">🔍</span>
+                    <span class="label">3D 模型搜索</span>
+                    <span class="badge">Search</span>
+                </button>
+                <button class="agent-btn" onclick="selectAgent('2d-search')">
+                    <span class="icon">🖼️</span>
+                    <span class="label">2D 图片搜索</span>
+                    <span class="badge">Search</span>
+                </button>
+                <button class="agent-btn" onclick="selectAgent('rag')">
+                    <span class="icon">📚</span>
+                    <span class="label">技术文档</span>
+                    <span class="badge">RAG</span>
+                </button>
+                <button class="agent-btn" onclick="selectAgent('api')">
+                    <span class="icon">🔧</span>
+                    <span class="label">API 参考</span>
+                    <span class="badge">RAG</span>
+                </button>
+                <button class="agent-btn" onclick="selectAgent('deploy')">
+                    <span class="icon">🚀</span>
+                    <span class="label">部署指南</span>
+                    <span class="badge">RAG</span>
+                </button>
+                <button class="agent-btn" onclick="selectAgent('troubleshoot')">
+                    <span class="icon">🔧</span>
+                    <span class="label">故障排查</span>
+                    <span class="badge">RAG</span>
+                </button>
+                <button class="agent-btn" onclick="selectAgent('process')">
+                    <span class="icon">⚙️</span>
+                    <span class="label">任务状态</span>
+                    <span class="badge">Process</span>
+                </button>
+                <button class="agent-btn" onclick="selectAgent('history')">
+                    <span class="icon">📋</span>
+                    <span class="label">处理历史</span>
+                    <span class="badge">Process</span>
+                </button>
+            </div>
+
+            <div class="settings">
+                <div class="setting-item">
+                    <label>租户</label>
+                    <select id="tenantSelect">
+                        <option value="huabei">华贝 (huabei)</option>
+                        <option value="shenfa">申发 (shenfa)</option>
+                        <option value="meidi">美的 (meidi)</option>
+                        <option value="dongjiang">东江 (dongjiang)</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label>用户 ID</label>
+                    <input type="text" id="userId" value="demo_user" placeholder="输入用户ID">
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="chat-area">
+            <div class="chat-header">
+                <h2 id="chatTitle">通用对话</h2>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                        <input type="checkbox" id="streamMode" checked style="cursor: pointer;">
+                        <span>流式输出</span>
+                    </label>
+                    <div class="status">在线</div>
+                </div>
+            </div>
+
+            <div class="messages" id="messages">
+                <div class="welcome">
+                    <h2>欢迎使用 I3D Agent System</h2>
+                    <p>智能多代理助手，支持 3D 模型搜索、技术文档查询、任务处理等功能</p>
+                    <div class="quick-actions">
+                        <div class="quick-action" onclick="quickAction('search')">
+                            <div class="icon">🔍</div>
+                            <div class="label">搜索相似零件</div>
+                        </div>
+                        <div class="quick-action" onclick="quickAction('rag')">
+                            <div class="icon">📚</div>
+                            <div class="label">查询技术文档</div>
+                        </div>
+                        <div class="quick-action" onclick="quickAction('process')">
+                            <div class="icon">⚙️</div>
+                            <div class="label">查看任务状态</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <div id="filePreview" style="display:none;"></div>
+                <div class="input-wrapper">
+                    <div class="input-box">
+                        <textarea id="messageInput" placeholder="输入消息... (Shift+Enter 换行)" onkeydown="handleKeydown(event)"></textarea>
+                        <button class="attach-btn" onclick="attachFile()" title="上传文件">📎</button>
+                        <input type="file" id="fileInput" style="display:none" onchange="handleFileSelect(event)">
+                    </div>
+                    <button class="send-btn" onclick="sendMessage()" id="sendBtn">➤</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin; // 自动使用当前页面地址
+        let currentAgent = 'general';
+        let sessionId = null;
+        let attachedFile = null;
+
+        const agentConfig = {
+            'general': { title: '通用对话', prompt: '' },
+            'search': { title: '3D 模型搜索', prompt: '搜索：' },
+            '2d-search': { title: '2D 图片搜索', prompt: '请上传 2D 图片进行搜索，或描述：' },
+            'rag': { title: '技术文档查询', prompt: '文档查询：' },
+            'api': { title: 'API 参考', prompt: 'API 查询：' },
+            'deploy': { title: '部署指南', prompt: '部署问题：' },
+            'troubleshoot': { title: '故障排查', prompt: '故障排查：' },
+            'process': { title: '任务状态查询', prompt: '查询任务状态：' },
+            'history': { title: '处理历史', prompt: '查询处理历史：' }
+        };
+
+        function selectAgent(agent) {
+            currentAgent = agent;
+            document.querySelectorAll('.agent-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.closest('.agent-btn').classList.add('active');
+            document.getElementById('chatTitle').textContent = agentConfig[agent].title;
+            document.getElementById('messageInput').placeholder = agentConfig[agent].prompt || '输入消息...';
+
+            // Hide welcome message
+            const welcome = document.querySelector('.welcome');
+            if (welcome) welcome.style.display = 'none';
+        }
+
+        function quickAction(type) {
+            const prompts = {
+                'search': '帮我搜索一个螺栓零件，材质为不锈钢',
+                'rag': '如何部署 3D 搜索服务？',
+                'process': '查询最近的文件处理任务状态'
+            };
+            document.getElementById('messageInput').value = prompts[type];
+            sendMessage();
+        }
+
+        function attachFile() {
+            document.getElementById('fileInput').click();
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                attachedFile = file;
+                const preview = document.getElementById('filePreview');
+                preview.style.display = 'flex';
+                preview.innerHTML = `
+                    <div class="file-preview">
+                        <span class="name">📎 ${file.name}</span>
+                        <span class="remove" onclick="removeFile()">✕</span>
+                    </div>
+                `;
+            }
+        }
+
+        function removeFile() {
+            attachedFile = null;
+            document.getElementById('fileInput').value = '';
+            document.getElementById('filePreview').style.display = 'none';
+        }
+
+        function handleKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function addMessage(type, content, agentType = 'supervisor', sources = null, thoughtProcess = null) {
+            const messagesDiv = document.getElementById('messages');
+
+            // Hide welcome on first message
+            const welcome = messagesDiv.querySelector('.welcome');
+            if (welcome) welcome.remove();
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+
+            let headerHTML = '';
+            if (type === 'assistant') {
+                const badgeClass = agentType.toLowerCase();
+                headerHTML = `
+                    <div class="message-header">
+                        <span>I3D Assistant</span>
+                        <span class="agent-badge ${badgeClass}">${agentType}</span>
+                        <span>${new Date().toLocaleTimeString()}</span>
+                    </div>
+                `;
+            }
+
+            let sourcesHTML = '';
+            if (sources && sources.length > 0) {
+                sourcesHTML = `
+                    <details class="sources">
+                        <summary>📚 参考 ${sources.length} 条来源</summary>
+                        <div class="sources-list">
+                            ${sources.map(s => `
+                                <div class="source-item">
+                                    <div class="title">${s.title || s.source || '未知来源'} <span class="score">★ ${(s.score * 100).toFixed(1)}%</span></div>
+                                    ${s.chunk_index !== undefined ? `<div class="chunk">Chunk #${s.chunk_index}</div>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </details>
+                `;
+            }
+
+            let thoughtHTML = '';
+            if (thoughtProcess && thoughtProcess.length > 0) {
+                thoughtHTML = `
+                    <details class="thought-process" open>
+                        <summary>🧠 思考过程</summary>
+                        <div class="thought-steps">
+                            ${thoughtProcess.map(step => `<div class="thought-step">• ${step}</div>`).join('')}
+                        </div>
+                    </details>
+                `;
+            }
+
+            messageDiv.innerHTML = `
+                ${headerHTML}
+                <div class="message-content">
+                    <div class="message-text">${formatMessage(content)}</div>
+                    ${thoughtHTML}
+                    ${sourcesHTML}
+                </div>
+            `;
+
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function showTyping() {
+            const messagesDiv = document.getElementById('messages');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message assistant';
+            typingDiv.id = 'typingIndicator';
+            typingDiv.innerHTML = `
+                <div class="message-content">
+                    <div class="typing">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                </div>
+            `;
+            messagesDiv.appendChild(typingDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function hideTyping() {
+            const typing = document.getElementById('typingIndicator');
+            if (typing) typing.remove();
+        }
+
+        function formatMessage(text) {
+            // Simple formatting for code blocks and line breaks
+            return text
+                .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\n/g, '<br>');
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            const sendBtn = document.getElementById('sendBtn');
+            const streamMode = document.getElementById('streamMode')?.checked || true;
+
+            if (!message && !attachedFile) return;
+
+            // Get user settings
+            const userId = document.getElementById('userId').value || 'demo_user';
+            const tenantId = document.getElementById('tenantSelect').value;
+
+            // Clear input
+            input.value = '';
+            sendBtn.disabled = true;
+
+            // Add user message
+            const userMessage = message + (attachedFile ? ` [文件: ${attachedFile.name}]` : '');
+            addMessage('user', userMessage);
+
+            // Generate session ID
+            const currentSessionId = sessionId || Math.random().toString(36).substring(2);
+
+            try {
+                const payload = {
+                    message: message || `处理上传的文件: ${attachedFile.name}`,
+                    user_id: userId,
+                    tenant_id: tenantId,
+                    session_id: currentSessionId
+                };
+
+                if (streamMode) {
+                    await streamChat(payload, currentSessionId, sendBtn);
+                } else {
+                    await normalChat(payload, sendBtn);
+                }
+
+                // Clear attached file
+                if (attachedFile) {
+                    removeFile();
+                }
+
+            } catch (error) {
+                hideTyping();
+                const errorMsg = `❌ 错误: ${error.message}\n\n请确保 API 服务正在运行: ${API_BASE}`;
+                addMessage('assistant', errorMsg);
+                sendBtn.disabled = false;
+                input.focus();
+            }
+        }
+
+        async function streamChat(payload, currentSessionId, sendBtn) {
+            // Stream mode - use SSE
+            const response = await fetch(`${API_BASE}/api/v1/chat/stream`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Tenant-ID': payload.tenant_id
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            // Create message container for streaming
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+
+            const headerHTML = `
+                <div class="message-header">
+                    <span>I3D Assistant</span>
+                    <span class="agent-badge supervisor">supervisor</span>
+                    <span>${new Date().toLocaleTimeString()}</span>
+                </div>
+            `;
+
+            messageDiv.innerHTML = `
+                ${headerHTML}
+                <div class="message-content">
+                    <div class="message-text streaming" id="streaming-${currentSessionId}">正在思考...</div>
+                </div>
+            `;
+
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            // Handle SSE stream
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const streamingDiv = document.getElementById(`streaming-${currentSessionId}`);
+            let fullResponse = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+
+                            if (data.type === 'content') {
+                                fullResponse += data.content;
+                                streamingDiv.innerHTML = formatMessage(fullResponse);
+                                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                            } else if (data.type === 'done') {
+                                // 移除"正在思考..."占位文本
+                                if (!fullResponse) {
+                                    fullResponse = '处理完成';
+                                }
+                                streamingDiv.innerHTML = formatMessage(fullResponse);
+                                streamingDiv.classList.remove('streaming');
+                                sessionId = data.session_id;
+
+                                // Remove streaming indicator
+                                streamingDiv.classList.remove('streaming');
+
+                                // Add sources if available
+                                if (data.sources && data.sources.length > 0) {
+                                    const sourcesHTML = `
+                                        <details class="sources">
+                                            <summary>📚 参考 ${data.sources.length} 条来源</summary>
+                                            <div class="sources-list">
+                                                ${data.sources.map(s => `
+                                                    <div class="source-item">
+                                                        <div class="title">${s.title || s.source || '未知来源'} <span class="score">★ ${(s.score * 100).toFixed(1)}%</span></div>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </details>
+                                    `;
+                                    streamingDiv.parentElement.innerHTML += sourcesHTML;
+                                }
+
+                                sendBtn.disabled = false;
+                                document.getElementById('messageInput').focus();
+                            } else if (data.type === 'error') {
+                                fullResponse = `❌ 错误: ${data.error}`;
+                                streamingDiv.innerHTML = formatMessage(fullResponse);
+                                streamingDiv.classList.remove('streaming');
+                                sendBtn.disabled = false;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE data:', e);
+                        }
+                    }
+                }
+            }
+        }
+
+        async function normalChat(payload, sendBtn) {
+            // Non-streaming mode
+            showTyping();
+
+            const response = await fetch(`${API_BASE}/api/v1/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Tenant-ID': payload.tenant_id
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            // Save session
+            if (data.session_id) {
+                sessionId = data.session_id;
+            }
+
+            hideTyping();
+
+            // Add assistant response
+            addMessage(
+                'assistant',
+                data.response || '处理完成',
+                data.metadata?.agent || 'supervisor',
+                data.sources || [],
+                data.thought_process || []
+            );
+
+            sendBtn.disabled = false;
+            document.getElementById('messageInput').focus();
+        }
+
+        // Focus input on load
+        document.getElementById('messageInput').focus();
+
+        // Check API health on load
+        fetch(`${API_BASE}/health`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'same-origin'
+        })
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(data => {
+                console.log('API Health:', data);
+            })
+            .catch(err => {
+                console.warn('API not available:', err);
+                document.querySelector('.status').innerHTML = '⚠️ 离线';
+                document.querySelector('.status').style.color = '#ef4444';
+            });
+    </script>
+</body>
+</html>

@@ -3,6 +3,7 @@
 from typing import Dict, Any, Optional, List
 
 from i3d_agent.agents.base import AgentConfig, BaseAgent
+from i3d_agent.llm import get_llm_client, Message
 
 
 class SupervisorAgent(BaseAgent):
@@ -156,5 +157,54 @@ class SupervisorAgent(BaseAgent):
             "task_type": "general",
             "messages": messages,
             "message_count": len(messages),
+            "status": "success",
+        }
+
+    async def chat(
+        self,
+        message: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Handle general conversational queries using LLM.
+
+        Args:
+            message: User message
+            conversation_history: Optional conversation history
+            tenant_id: Optional tenant ID
+
+        Returns:
+            Response dictionary with answer
+        """
+        system_prompt = """你是 I3D Agent System 的智能助手，专门帮助用户处理 3D CAD 模型搜索、技术文档查询和任务处理等相关问题。
+
+你的职责：
+1. 友好地回应用户的问候和一般性问题
+2. 解释 I3D 系统的功能和使用方法
+3. 引导用户使用搜索、文档查询等功能
+4. 使用简洁、专业的中文回答
+
+如果用户询问具体的技术问题、搜索功能或文档查询，引导他们使用相应的功能。"""
+
+        # Build conversation context
+        messages = [Message(role="user", content=message)]
+
+        if conversation_history:
+            for msg in conversation_history[-5:]:  # Last 5 messages
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if content:
+                    messages.append(Message(role=role, content=content))
+
+        llm_client = get_llm_client()
+        response = await llm_client.generate(
+            messages=messages,
+            system_prompt=system_prompt,
+            temperature=0.8,
+        )
+
+        return {
+            "task_type": "general",
+            "answer": response,
             "status": "success",
         }

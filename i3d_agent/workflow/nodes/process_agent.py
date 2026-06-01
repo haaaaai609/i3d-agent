@@ -27,12 +27,12 @@ async def process_agent_node(state: WorkflowState) -> WorkflowState:
         input_data = current_task.input_data
 
         if "task_id" in input_data:
-            result = await agent.get_status(
+            result = agent.get_status(
                 task_id=input_data["task_id"],
                 tenant_id=tenant_id,
             )
         elif "item_code" in input_data:
-            result = await agent.get_history(
+            result = agent.get_history(
                 item_code=input_data["item_code"],
                 tenant_id=tenant_id,
             )

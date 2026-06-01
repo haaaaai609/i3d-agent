@@ -1,31 +1,79 @@
 version: '3.8'
 
 services:
+  i3d-agent-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - i3d-agent-api
+    networks:
+      - i3d-network
+    restart: unless-stopped
+
   i3d-agent-api:
     build: .
     ports:
-      - "8000:8000"
+      - "8999:8000"
+    volumes:
+      - ./frontend:/app/frontend
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/i3d_agent
+      # Database
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/i3d_agent
+      # Redis
       - REDIS_URL=redis://redis:6379/0
+      # LLM
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+      - DEFAULT_LLM_PROVIDER=dashscope
+      - DEFAULT_LLM_MODEL=qwen-plus
+      # External Services (复用现有 MinIO)
+      - MINIO_API_URL=http://host.docker.internal:19002
+      - INFER_ENGINEER_URL=http://host.docker.internal:18000
+      - SEARCH_CORE_URL=http://host.docker.internal:28000
+      - XXL_JOB_URL=http://host.docker.internal:4091
+      # Tenant
+      - DEFAULT_TENANT=huabei
+      - SUPPORTED_TENANTS=shenfa,meidi,dongjiang,huabei
+      # Observability
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318
+      - ENABLE_TRACING=false
+      - SERVICE_NAME=i3d-agent-system
+      # Logging
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - ENVIRONMENT=development
     depends_on:
       - postgres
       - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - i3d-network
 
   postgres:
     image: pgvector/pgvector:pg16
     environment:
       - POSTGRES_DB=i3d_agent
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - i3d-network
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    networks:
+      - i3d-network
 
 volumes:
   postgres_data:
+
+networks:
+  i3d-network:
+    driver: bridge
