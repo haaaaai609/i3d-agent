@@ -18,6 +18,12 @@ def get_memory_manager() -> MemoryManager:
     return _memory_manager
 
 
+def set_memory_manager(manager: MemoryManager) -> None:
+    """Set the global memory manager (useful for testing)."""
+    global _memory_manager
+    _memory_manager = manager
+
+
 async def memory_agent_node(state: WorkflowState) -> WorkflowState:
     memory_manager = get_memory_manager()
     user_id = state["user_id"]

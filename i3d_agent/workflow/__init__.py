@@ -16,6 +16,7 @@ from i3d_agent.workflow.utils import (
     is_degradable_error,
     is_critical_error,
 )
+from i3d_agent.workflow.graph import I3DWorkflow
 
 __all__ = [
     "SubTask",
@@ -30,4 +31,5 @@ __all__ = [
     "is_retriable_error",
     "is_degradable_error",
     "is_critical_error",
+    "I3DWorkflow",
 ]
