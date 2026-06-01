@@ -6,10 +6,28 @@ from i3d_agent.workflow.state import (
     ErrorInfo,
     WorkflowState,
 )
+from i3d_agent.workflow.utils import (
+    is_simple_query,
+    get_task_by_id,
+    get_next_pending_task,
+    get_failed_task,
+    update_task_status,
+    is_retriable_error,
+    is_degradable_error,
+    is_critical_error,
+)
 
 __all__ = [
     "SubTask",
     "ClarificationRequest",
     "ErrorInfo",
     "WorkflowState",
+    "is_simple_query",
+    "get_task_by_id",
+    "get_next_pending_task",
+    "get_failed_task",
+    "update_task_status",
+    "is_retriable_error",
+    "is_degradable_error",
+    "is_critical_error",
 ]
