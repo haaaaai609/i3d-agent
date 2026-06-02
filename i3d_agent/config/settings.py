@@ -5,6 +5,8 @@ This module defines all configuration settings for the i3d-agent-system.
 Settings are loaded from environment variables with sensible defaults.
 """
 
+from __future__ import annotations
+
 from functools import lru_cache
 from typing import List, Optional
 
