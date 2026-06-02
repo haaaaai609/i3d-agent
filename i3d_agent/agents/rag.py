@@ -1,36 +1,21 @@
-"""RAG agent for technical document Q&A."""
+"""RAG agent for technical document Q&A with full RAG capabilities."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from i3d_agent.agents.base import AgentConfig, BaseAgent
-from i3d_agent.tools.rag_tools import (
-    retrieve_documents,
-    search_api_reference,
-    get_deployment_guide,
-    find_troubleshooting_steps,
-)
+from i3d_agent.rag.retrieval import RetrievalEngine
+from i3d_agent.rag.rerank import RerankService
+from i3d_agent.rag.models import Chunk
 from i3d_agent.llm import get_llm_client, Message
+from i3d_agent.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class RAGAgent(BaseAgent):
-    """RAG agent for technical document Q&A.
+    """RAG agent for technical document Q&A with full retrieval capabilities."""
 
-    This agent provides capabilities for:
-    - Retrieving technical documents from the knowledge base
-    - Searching API reference documentation
-    - Getting deployment guides
-    - Finding troubleshooting steps
-
-    The agent uses retrieval-augmented generation (RAG) to provide
-    accurate, context-aware answers based on the technical documentation.
-    """
-
-    def __init__(self, config: Optional[AgentConfig] = None) -> None:
-        """Initialize the RAG agent.
-
-        Args:
-            config: Optional agent configuration. Uses default if not provided.
-        """
+    def __init__(self, config: Optional[AgentConfig] = None):
         if config is None:
             config = AgentConfig(
                 name="rag",
@@ -42,52 +27,37 @@ class RAGAgent(BaseAgent):
                 ),
             )
 
-        # Initialize tools
         tools = [
-            {
-                "name": "retrieve_documents",
-                "description": "Retrieve technical documents from the RAG knowledge base",
-            },
-            {
-                "name": "search_api_reference",
-                "description": "Search API documentation for specific endpoints and methods",
-            },
-            {
-                "name": "get_deployment_guide",
-                "description": "Get deployment guide for a specific system component",
-            },
-            {
-                "name": "find_troubleshooting_steps",
-                "description": "Find troubleshooting steps for specific errors and components",
-            },
+            {"name": "retrieve_documents", "description": "Retrieve technical documents"},
+            {"name": "search_api_reference", "description": "Search API documentation"},
+            {"name": "get_deployment_guide", "description": "Get deployment guides"},
+            {"name": "find_troubleshooting_steps", "description": "Find troubleshooting steps"},
         ]
 
         super().__init__(config=config, tools=tools)
+
+        # Initialize RAG components
+        self.retrieval_engine = RetrievalEngine()
+        self.rerank_service = RerankService()
 
     async def answer(
         self,
         question: str,
         tenant_id: Optional[str] = None,
+        top_k: int = 5,
+        enable_rerank: bool = True,
     ) -> Dict[str, Any]:
-        """Answer a technical question using RAG.
-
-        This method retrieves relevant documents and synthesizes an answer.
-        Currently returns a stub response pending full LLM integration.
+        """
+        回答技术问题
 
         Args:
-            question: The technical question to answer
-            tenant_id: Optional tenant ID for multi-tenancy
+            question: 问题
+            tenant_id: 租户 ID
+            top_k: 检索文档数
+            enable_rerank: 是否启用重排序
 
         Returns:
-            Dictionary with keys:
-                - question: The original question
-                - answer: The generated answer (stub for now)
-                - sources: List of source documents used
-                - status: "success", "no_results", or "error"
-                - error: Error message if status is "error"
-
-        Raises:
-            ValueError: If question is empty
+            答案响应
         """
         if not question or not question.strip():
             return {
@@ -95,38 +65,94 @@ class RAGAgent(BaseAgent):
                 "answer": "",
                 "sources": [],
                 "status": "error",
-                "error": "Question cannot be empty",
+                "error": "Question cannot be empty"
             }
 
         try:
-            # Retrieve relevant documents
-            docs = retrieve_documents(
+            # Generate query vector
+            from i3d_agent.rag.embedding import EmbeddingService
+            embedding_service = EmbeddingService()
+            query_vector = await embedding_service.embed_text(question)
+
+            # Execute retrieval
+            search_type = self.retrieval_engine.classify_query(question)
+            results = await self.retrieval_engine.hybrid_retrieval(
                 query=question,
-                knowledge_base="default",
-                top_k=5,
-                tenant_id=tenant_id,
+                query_vector=query_vector,
+                tenant_id=tenant_id or "default",
+                top_k=top_k * 2,  # Get more results for reranking
+                search_type=search_type
             )
 
-            if not docs:
+            if not results:
                 return {
                     "question": question,
                     "answer": "抱歉，知识库中没有找到相关文档。",
                     "sources": [],
-                    "status": "no_results",
+                    "status": "no_results"
                 }
 
-            # Build context from retrieved documents
-            context_parts = []
-            for i, doc in enumerate(docs, 1):
-                title = doc.get("title", "未知文档")
-                content = doc.get("content", doc.get("text", ""))
-                score = doc.get("score", 0)
-                context_parts.append(f"[文档 {i}] {title} (相关度: {score:.2f})\n{content}")
+            # Rerank
+            if enable_rerank:
+                results = await self.rerank_service.rerank(
+                    query=question,
+                    chunks=results,
+                    top_k=top_k
+                )
 
-            context = "\n\n".join(context_parts)
+            # Build context
+            context = self._build_context(results)
 
-            # Generate answer using LLM
-            system_prompt = """你是一个技术文档助手，专门回答关于 3D CAD 系统、搜索服务、部署和故障排查的问题。
+            # Generate answer
+            answer = await self._generate_answer(question, context)
+
+            # Extract sources
+            sources = [
+                {
+                    "doc_id": r.doc_id,
+                    "title": r.metadata.get("title", "Unknown"),
+                    "score": r.final_score,
+                    "chunk_index": r.chunk_index
+                }
+                for r in results[:3]  # Top 3 sources
+            ]
+
+            return {
+                "question": question,
+                "answer": answer,
+                "sources": sources,
+                "status": "success",
+                "metadata": {
+                    "num_retrieved": len(results),
+                    "search_type": search_type,
+                    "tenant_id": tenant_id
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"RAG answer failed: {e}")
+            return {
+                "question": question,
+                "answer": "",
+                "sources": [],
+                "status": "error",
+                "error": str(e)
+            }
+
+    def _build_context(self, results: list) -> str:
+        """Build LLM context from retrieval results"""
+        context_parts = []
+        for i, result in enumerate(results, 1):
+            title = result.metadata.get("title", "Unknown Document")
+            content = result.content
+            score = result.final_score or 0
+            context_parts.append(f"[文档 {i}] {title} (相关度: {score:.2f})\n{content}")
+
+        return "\n\n".join(context_parts)
+
+    async def _generate_answer(self, question: str, context: str) -> str:
+        """Generate answer using LLM"""
+        system_prompt = """你是一个技术文档助手，专门回答关于 3D CAD 系统、搜索服务、部署和故障排查的问题。
 
 请根据提供的文档上下文回答用户问题。如果文档中没有相关信息，请诚实地说明。
 
@@ -136,144 +162,25 @@ class RAGAgent(BaseAgent):
 3. 如果需要步骤，请按顺序列出
 4. 使用中文回答"""
 
-            user_prompt = f"""问题: {question}
+        user_prompt = f"""问题: {question}
 
 相关文档:
 {context}
 
 请根据上述文档回答问题。"""
 
-            llm_client = get_llm_client()
-            answer = await llm_client.generate(
-                messages=[Message(role="user", content=user_prompt)],
-                system_prompt=system_prompt,
-                temperature=0.7,
-            )
+        llm_client = get_llm_client()
+        answer = await llm_client.generate(
+            messages=[Message(role="user", content=user_prompt)],
+            system_prompt=system_prompt,
+            temperature=0.7
+        )
 
-            return {
-                "question": question,
-                "answer": answer,
-                "sources": [
-                    {
-                        "doc_id": doc.get("doc_id"),
-                        "title": doc.get("title"),
-                        "score": doc.get("score"),
-                    }
-                    for doc in docs
-                ],
-                "status": "success",
-                "metadata": {
-                    "num_docs_retrieved": len(docs),
-                    "tenant_id": tenant_id,
-                },
-            }
+        return answer
 
-        except Exception as e:
-            return {
-                "question": question,
-                "answer": "",
-                "sources": [],
-                "status": "error",
-                "error": str(e),
-            }
-
-    def get_api_info(
-        self,
-        endpoint: str,
-        method: str = "GET",
-        tenant_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Get API reference information for an endpoint.
-
-        Args:
-            endpoint: The API endpoint path (e.g., "/api/v1/search/3d")
-            method: HTTP method (GET, POST, PUT, DELETE). Defaults to "GET"
-            tenant_id: Optional tenant ID for multi-tenancy
-
-        Returns:
-            API reference information dictionary
-        """
-        try:
-            return {
-                "status": "success",
-                "data": search_api_reference(
-                    endpoint=endpoint,
-                    method=method,
-                    tenant_id=tenant_id,
-                ),
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "error": str(e),
-                "endpoint": endpoint,
-                "method": method,
-            }
-
-    def get_deployment_info(
-        self,
-        component: str,
-        tenant_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Get deployment guide for a component.
-
-        Args:
-            component: The component name (e.g., "infer-engineer", "rag-service")
-            tenant_id: Optional tenant ID for multi-tenancy
-
-        Returns:
-            Deployment guide dictionary
-        """
-        try:
-            return {
-                "status": "success",
-                "data": get_deployment_guide(
-                    component=component,
-                    tenant_id=tenant_id,
-                ),
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "error": str(e),
-                "component": component,
-            }
-
-    def get_troubleshooting_info(
-        self,
-        error_code: Optional[str] = None,
-        error_message: Optional[str] = None,
-        component: Optional[str] = None,
-        tenant_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Get troubleshooting information for an error.
-
-        Args:
-            error_code: Optional error code (e.g., "ERR-5001", "E001")
-            error_message: Optional error message or pattern to search for
-            component: Optional component name to narrow search scope
-            tenant_id: Optional tenant ID for multi-tenancy
-
-        Returns:
-            Troubleshooting information dictionary
-        """
-        try:
-            return {
-                "status": "success",
-                "data": find_troubleshooting_steps(
-                    error_code=error_code,
-                    error_message=error_message,
-                    component=component,
-                    tenant_id=tenant_id,
-                ),
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "error": str(e),
-                "error_code": error_code,
-                "component": component,
-            }
+    async def close(self):
+        """Close connections"""
+        await self.rerank_service.close()
 
 
 __all__ = ["RAGAgent"]
