@@ -56,6 +56,11 @@ class Settings(BaseSettings):
         default="https://dashscope.aliyuncs.com/compatible-mode/v1",
         description="DashScope base URL"
     )
+    COHERE_API_KEY: str = Field(default="", description="Cohere API key")
+    COHERE_RERANK_MODEL: str = Field(
+        default="rerank-english-v2.0",
+        description="Cohere rerank model"
+    )
     DEFAULT_LLM_PROVIDER: str = Field(default="anthropic", description="Default LLM provider (anthropic, openai, dashscope)")
     DEFAULT_LLM_MODEL: str = Field(
         default="claude-3-5-sonnet-20241022",
