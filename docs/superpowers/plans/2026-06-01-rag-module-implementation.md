@@ -5141,4 +5141,82 @@ curl -X POST http://localhost:8000/api/v1/rag/search \\
 
 ---
 
+## 下一步建议
+
+### 1. 运行数据库迁移
+
+\`\`\`bash
+psql -U postgres -d i3d_agent -f i3d_agent/migrations/versions/002_add_rag_tables.sql
+\`\`\`
+
+### 2. 配置 Cohere API Key (用于重排序功能)
+
+在 `.env` 文件中添加或设置环境变量：
+\`\`\`bash
+export COHERE_API_KEY=your-cohere-api-key
+\`\`\`
+
+### 3. 启动 RAG Worker 服务
+
+\`\`\`bash
+# 方式一：Docker Compose
+docker-compose up -d rag-worker
+
+# 方式二：直接运行
+python scripts/run_rag_worker.py
+\`\`\`
+
+### 4. 运行测试验证
+
+\`\`\`bash
+# 运行 RAG 模块测试
+pytest tests/test_rag/ -v
+
+# 运行 RAG Agent 测试
+pytest tests/test_agents/test_rag.py -v
+
+# 运行集成测试
+pytest tests/test_rag/integration_test.py -v -m integration
+\`\`\`
+
+### 5. 上传测试文档
+
+\`\`\`bash
+curl -X POST http://localhost:8000/api/v1/rag/documents \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "tenant_id": "default",
+    "title": "API 文档",
+    "content": "# API Reference\\n\\n## GET /api/test\\n\\n这是一个测试接口。",
+    "doc_type": "technical",
+    "source_type": "md"
+  }'
+\`\`\`
+
+### 6. 测试检索功能
+
+\`\`\`bash
+# 搜索文档
+curl -X POST http://localhost:8000/api/v1/rag/search \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "query": "测试接口",
+    "tenant_id": "default",
+    "top_k": 5,
+    "enable_expansion": true,
+    "enable_hyde": true,
+    "enable_rerank": true
+  }'
+
+# 问答测试
+curl -X POST http://localhost:8000/api/v1/rag/ask \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "question": "如何使用测试接口？",
+    "tenant_id": "default"
+  }'
+\`\`\`
+
+---
+
 *实施计划结束*

@@ -126,6 +126,36 @@ class Settings(BaseSettings):
     RAG_SIMILARITY_THRESHOLD: float = Field(default=0.7, description="Similarity threshold for RAG")
     VECTOR_DIMENSION: int = Field(default=1536, description="Vector embedding dimension")
 
+    # RAG Document Storage
+    RAG_DATA_PATH: str = Field(default="./data/rag", description="RAG data directory")
+    RAG_DOCUMENTS_PATH: str = Field(default="./data/rag/documents", description="Document storage path")
+
+    # RAG Chunking Configuration
+    CHUNK_SIZE_DEFAULT: int = Field(default=800, description="Default chunk size")
+    CHUNK_OVERLAP_DEFAULT: int = Field(default=150, description="Default overlap size")
+
+    # RAG Retrieval Configuration
+    RAG_RERANK_TOP_K: int = Field(default=5, description="Top K after reranking")
+
+    # RAG Hybrid Retrieval Weights
+    HYBRID_ALPHA_SEMANTIC: float = Field(default=0.7, description="Semantic retrieval weight")
+    HYBRID_ALPHA_KEYWORD: float = Field(default=0.3, description="Keyword retrieval weight")
+    HYBRID_ALPHA_EXACT: float = Field(default=0.1, description="Exact match weight")
+
+    # RAG Agentic Configuration
+    AGENTIC_QUERY_EXPANSION_COUNT: int = Field(default=3, description="Query expansion count")
+    AGENTIC_MAX_ITERATIONS: int = Field(default=3, description="Multi-step reasoning max iterations")
+    AGENTIC_ENABLE_HYDE: bool = Field(default=True, description="Enable HyDE")
+    AGENTIC_ENABLE_RERANK: bool = Field(default=True, description="Enable reranking")
+
+    # RAG Rerank Configuration
+    RERANK_PROVIDER: str = Field(default="cohere", description="Rerank service provider")
+    RERANK_MODEL: str = Field(default="rerank-english-v2.0", description="Rerank model")
+
+    # RAG Index Configuration
+    INDEX_BATCH_SIZE: int = Field(default=10, description="Index batch size")
+    INDEX_WORKER_CONCURRENCY: int = Field(default=2, description="Index worker concurrency")
+
     # Memory Settings
     MEMORY_MAX_ENTRIES: int = Field(default=1000, description="Max memory entries per session")
     MEMORY_TTL_HOURS: int = Field(default=24, description="Memory TTL in hours")

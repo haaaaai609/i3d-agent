@@ -5,10 +5,11 @@ This module provides LangChain-compatible tools for interacting with
 the RAG knowledge base, including document retrieval, API reference search,
 deployment guides, and troubleshooting steps.
 
-These are stub implementations pending the full RAG service integration.
+These tools now integrate with the full RAG module.
 """
 
 from typing import Any, Dict, List, Optional
+import asyncio
 
 from langchain_core.tools import tool
 
@@ -26,6 +27,9 @@ def retrieve_documents(
     Performs semantic search on the document knowledge base to find relevant
     technical documentation, guides, and reference materials.
 
+    Now uses the full Agentic RAG capabilities including query expansion,
+    HyDE, and reranking.
+
     Args:
         query: The search query for retrieving relevant documents
         knowledge_base: Name of the knowledge base to search (default: "default")
@@ -42,15 +46,13 @@ def retrieve_documents(
 
     Raises:
         ValueError: If query is empty or top_k is invalid
-        NotImplementedError: Until RAG service is implemented
 
     Example:
         >>> docs = retrieve_documents("How to configure 3D search API?")
         >>> print(f"Found {len(docs)} relevant documents")
 
     Note:
-        This is a stub implementation. The actual RAG integration will use
-        vector embeddings and semantic search on the document corpus.
+        Uses the AgenticRAGController for advanced retrieval capabilities.
     """
     if not query or not query.strip():
         raise ValueError("query cannot be empty")
@@ -58,21 +60,41 @@ def retrieve_documents(
     if top_k < 1 or top_k > 100:
         raise ValueError("top_k must be between 1 and 100")
 
-    # Stub implementation - RAG service integration pending
-    return [
-        {
-            "doc_id": "stub-doc-1",
-            "title": "RAG Service Not Yet Implemented",
-            "content": f"Query: {query}. This is a placeholder response. "
-            "The RAG service will be implemented in a future update.",
-            "score": 0.9,
-            "metadata": {
-                "source": "stub",
-                "knowledge_base": knowledge_base,
-                "tenant_id": tenant_id,
-            },
-        }
-    ]
+    async def _retrieve():
+        from i3d_agent.rag.controller import AgenticRAGController
+        from i3d_agent.rag.embedding import EmbeddingService
+
+        controller = AgenticRAGController()
+
+        # Generate query vector
+        embedding_service = EmbeddingService()
+        query_vector = await embedding_service.embed_text(query)
+
+        # Perform retrieval with all features enabled
+        result = await controller.retrieve(
+            query=query,
+            tenant_id=tenant_id or knowledge_base,
+            top_k=top_k,
+            enable_expansion=True,
+            enable_hyde=True,
+            enable_rerank=True
+        )
+
+        await controller.close()
+        await embedding_service.close()
+
+        return [
+            {
+                "doc_id": r.doc_id,
+                "title": r.metadata.get("title", "Unknown"),
+                "content": r.content,
+                "score": r.final_score,
+                "metadata": r.metadata
+            }
+            for r in result.results
+        ]
+
+    return asyncio.run(_retrieve())
 
 
 @tool

@@ -71,6 +71,47 @@ services:
     networks:
       - i3d-network
 
+  rag-worker:
+    build: .
+    command: python scripts/run_rag_worker.py
+    environment:
+      # Database
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/i3d_agent
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      # LLM
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+      - DEFAULT_LLM_PROVIDER=dashscope
+      - EMBEDDING_MODEL=text-embedding-v3
+      # Cohere for Reranking
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
+      - RERANK_PROVIDER=cohere
+      - RERANK_MODEL=rerank-english-v2.0
+      # RAG Configuration
+      - RAG_DATA_PATH=./data/rag
+      - CHUNK_SIZE_DEFAULT=800
+      - AGENTIC_QUERY_EXPANSION_COUNT=3
+      - INDEX_WORKER_CONCURRENCY=2
+      # Observability
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318
+      - ENABLE_TRACING=false
+      - SERVICE_NAME=i3d-rag-worker
+      # Logging
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - ENVIRONMENT=development
+    depends_on:
+      - postgres
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - i3d-network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
 

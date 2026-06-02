@@ -9,11 +9,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from i3d_agent.api.routes.chat import router as chat_router
 from i3d_agent.utils.logger import get_logger
 from i3d_agent.utils.telemetry import instrument_fastapi
 
 logger = get_logger(__name__)
+
+# Import chat router (may fail if langgraph is not installed)
+try:
+    from i3d_agent.api.routes.chat import router as chat_router
+    CHAT_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Chat router not available: {e}")
+    CHAT_ROUTER_AVAILABLE = False
+
+# Import RAG router
+try:
+    from i3d_agent.rag.api import router as rag_router
+    RAG_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"RAG router not available: {e}")
+    RAG_ROUTER_AVAILABLE = False
 
 # Static files directory
 STATIC_DIR = Path(__file__).parent.parent.parent / "frontend" / "static"
@@ -46,7 +61,11 @@ def create_app() -> FastAPI:
     )
 
     # 注册路由
-    app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
+    if CHAT_ROUTER_AVAILABLE:
+        app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
+
+    if RAG_ROUTER_AVAILABLE:
+        app.include_router(rag_router)
 
     # 仪器化
     instrument_fastapi(app)
