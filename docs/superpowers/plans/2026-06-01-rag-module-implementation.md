@@ -1,6 +1,6 @@
 # RAG Module Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 实现完整的 RAG 模块，支持混合文档类型、增量索引、Agentic RAG（查询扩展、HyDE、重排序、多步推理）、混合检索（向量+BM25）、版本管理和监控仪表板。
 
@@ -18,7 +18,7 @@
 - Create: `i3d_agent/rag/models.py`
 - Test: `i3d_agent/tests/test_rag/test_models.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_models.py
@@ -100,7 +100,7 @@ def test_feedback_request():
     assert request.is_helpful is True
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 cd /data/yzh/i3d-agent-system
@@ -109,7 +109,7 @@ pytest tests/test_rag/test_models.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.models'"
 
-- [ ] **Step 3: Create the module with minimal implementation**
+- [x] **Step 3: Create the module with minimal implementation**
 
 ```python
 # i3d_agent/rag/models.py
@@ -227,7 +227,7 @@ class RetrievalResult(BaseModel):
     hypothetical_doc: Optional[str] = None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_models.py -v
@@ -235,7 +235,7 @@ pytest tests/test_rag/test_models.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/models.py tests/test_rag/test_models.py
@@ -249,7 +249,7 @@ git commit -m "feat(rag): add RAG data models with tests"
 **Files:**
 - Create: `i3d_agent/migrations/versions/002_add_rag_tables.sql`
 
-- [ ] **Step 1: Create the migration file**
+- [x] **Step 1: Create the migration file**
 
 ```sql
 -- i3d_agent/migrations/versions/002_add_rag_tables.sql
@@ -542,7 +542,7 @@ BEGIN
 END $$;
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add i3d_agent/migrations/versions/002_add_rag_tables.sql
@@ -556,7 +556,7 @@ git commit -m "feat(rag): add database migration for RAG tables"
 **Files:**
 - Create: `i3d_agent/rag/__init__.py`
 
-- [ ] **Step 1: Create the module init file**
+- [x] **Step 1: Create the module init file**
 
 ```python
 # i3d_agent/rag/__init__.py
@@ -596,7 +596,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add i3d_agent/rag/__init__.py
@@ -611,7 +611,7 @@ git commit -m "feat(rag): add RAG module initialization"
 - Create: `i3d_agent/rag/processor.py`
 - Test: `i3d_agent/tests/test_rag/test_processor.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_processor.py
@@ -727,7 +727,7 @@ def test_token_count_estimation():
     assert count < len(text)  # token 数应该少于字符数
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_processor.py -v
@@ -735,7 +735,7 @@ pytest tests/test_rag/test_processor.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.processor'"
 
-- [ ] **Step 3: Create the processor module**
+- [x] **Step 3: Create the processor module**
 
 ```python
 # i3d_agent/rag/processor.py
@@ -1155,7 +1155,7 @@ class DocumentProcessor:
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_processor.py -v
@@ -1163,7 +1163,7 @@ pytest tests/test_rag/test_processor.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/processor.py tests/test_rag/test_processor.py
@@ -1178,7 +1178,7 @@ git commit -m "feat(rag): add document processor with chunking support"
 - Create: `i3d_agent/rag/embedding.py`
 - Test: `i3d_agent/tests/test_rag/test_embedding.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_embedding.py
@@ -1235,7 +1235,7 @@ async def test_embedding_chunks():
         assert results[1]["embedding"] == [0.2] * 1536
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_embedding.py -v
@@ -1243,7 +1243,7 @@ pytest tests/test_rag/test_embedding.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.embedding'"
 
-- [ ] **Step 3: Create the embedding service**
+- [x] **Step 3: Create the embedding service**
 
 ```python
 # i3d_agent/rag/embedding.py
@@ -1420,7 +1420,7 @@ class EmbeddingService:
             self.client = None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_embedding.py -v
@@ -1428,7 +1428,7 @@ pytest tests/test_rag/test_embedding.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/embedding.py tests/test_rag/test_embedding.py
@@ -1443,7 +1443,7 @@ git commit -m "feat(rag): add embedding service with batch support"
 - Create: `i3d_agent/rag/document_manager.py`
 - Test: `i3d_agent/tests/test_rag/test_document_manager.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_document_manager.py
@@ -1530,7 +1530,7 @@ async def test_restore_document():
         mock_task.assert_called_once()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_document_manager.py -v
@@ -1538,7 +1538,7 @@ pytest tests/test_rag/test_document_manager.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.document_manager'"
 
-- [ ] **Step 3: Create the document manager**
+- [x] **Step 3: Create the document manager**
 
 ```python
 # i3d_agent/rag/document_manager.py
@@ -1930,7 +1930,7 @@ class DocumentManager:
             self._pool = None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_document_manager.py -v
@@ -1938,7 +1938,7 @@ pytest tests/test_rag/test_document_manager.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/document_manager.py tests/test_rag/test_document_manager.py
@@ -1953,7 +1953,7 @@ git commit -m "feat(rag): add document manager with version control"
 - Create: `i3d_agent/rag/index_worker.py`
 - Test: `i3d_agent/tests/test_rag/test_index_worker.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_index_worker.py
@@ -2013,7 +2013,7 @@ async def test_process_document_update():
         mock_embed.assert_called_once()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_index_worker.py -v
@@ -2021,7 +2021,7 @@ pytest tests/test_rag/test_index_worker.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.index_worker'"
 
-- [ ] **Step 3: Create the index worker**
+- [x] **Step 3: Create the index worker**
 
 ```python
 # i3d_agent/rag/index_worker.py
@@ -2267,7 +2267,7 @@ class IndexWorker:
         await self.embedding_service.close()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_index_worker.py -v
@@ -2275,7 +2275,7 @@ pytest tests/test_rag/test_index_worker.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/index_worker.py tests/test_rag/test_index_worker.py
@@ -2292,7 +2292,7 @@ git commit -m "feat(rag): add index worker for async document processing"
 - Create: `i3d_agent/rag/retrieval.py`
 - Test: `i3d_agent/tests/test_rag/test_retrieval.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_retrieval.py
@@ -2365,7 +2365,7 @@ async def test_hybrid_retrieval():
         assert len(results) >= 2
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_retrieval.py -v
@@ -2373,7 +2373,7 @@ pytest tests/test_rag/test_retrieval.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.retrieval'"
 
-- [ ] **Step 3: Create the retrieval engine**
+- [x] **Step 3: Create the retrieval engine**
 
 ```python
 # i3d_agent/rag/retrieval.py
@@ -2680,7 +2680,7 @@ class RetrievalEngine:
             self._pool = None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_retrieval.py -v
@@ -2688,7 +2688,7 @@ pytest tests/test_rag/test_retrieval.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/retrieval.py tests/test_rag/test_retrieval.py
@@ -2703,7 +2703,7 @@ git commit -m "feat(rag): add retrieval engine with hybrid search support"
 - Create: `i3d_agent/rag/rerank.py`
 - Test: `i3d_agent/tests/test_rag/test_rerank.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_rerank.py
@@ -2762,7 +2762,7 @@ async def test_rerank_fallback_to_original():
         assert results[1].id == "c2"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_rerank.py -v
@@ -2770,7 +2770,7 @@ pytest tests/test_rag/test_rerank.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.rerank'"
 
-- [ ] **Step 3: Create the rerank service**
+- [x] **Step 3: Create the rerank service**
 
 ```python
 # i3d_agent/rag/rerank.py
@@ -2891,7 +2891,7 @@ class RerankService:
             self.client = None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_rerank.py -v
@@ -2899,7 +2899,7 @@ pytest tests/test_rag/test_rerank.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/rerank.py tests/test_rag/test_rerank.py
@@ -2913,7 +2913,7 @@ git commit -m "feat(rag): add reranking service with Cohere integration"
 **Files:**
 - Modify: `i3d_agent/agents/rag.py`
 
-- [ ] **Step 1: Update RAG Agent to use new RAG module**
+- [x] **Step 1: Update RAG Agent to use new RAG module**
 
 ```python
 # i3d_agent/agents/rag.py
@@ -3102,14 +3102,14 @@ class RAGAgent(BaseAgent):
         await self.rerank_service.close()
 ```
 
-- [ ] **Step 2: Update tests for RAG Agent**
+- [x] **Step 2: Update tests for RAG Agent**
 
 ```python
 # tests/test_agents/test_rag.py
 # 更新现有测试以使用新的 RAG 实现
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 ```bash
 pytest tests/test_agents/test_rag.py -v
@@ -3117,7 +3117,7 @@ pytest tests/test_agents/test_rag.py -v
 
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add i3d_agent/agents/rag.py tests/test_agents/test_rag.py
@@ -3134,7 +3134,7 @@ git commit -m "feat(rag): update RAG agent with full retrieval capabilities"
 - Create: `i3d_agent/rag/query_expansion.py`
 - Test: `i3d_agent/tests/test_rag/test_query_expansion.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_query_expansion.py
@@ -3172,7 +3172,7 @@ async def test_query_expansion_with_custom_count():
         assert len(variations) >= 2
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_query_expansion.py -v
@@ -3180,7 +3180,7 @@ pytest tests/test_rag/test_query_expansion.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.query_expansion'"
 
-- [ ] **Step 3: Create the query expansion service**
+- [x] **Step 3: Create the query expansion service**
 
 ```python
 # i3d_agent/rag/query_expansion.py
@@ -3251,7 +3251,7 @@ class QueryExpansionService:
             return [query]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_query_expansion.py -v
@@ -3259,7 +3259,7 @@ pytest tests/test_rag/test_query_expansion.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/query_expansion.py tests/test_rag/test_query_expansion.py
@@ -3274,7 +3274,7 @@ git commit -m "feat(rag): add query expansion service"
 - Create: `i3d_agent/rag/hyde.py`
 - Test: `i3d_agent/tests/test_rag/test_hyde.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_hyde.py
@@ -3323,7 +3323,7 @@ async def test_detect_question():
     assert not service._is_question("系统配置")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_hyde.py -v
@@ -3331,7 +3331,7 @@ pytest tests/test_rag/test_hyde.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.hyde'"
 
-- [ ] **Step 3: Create the HyDE service**
+- [x] **Step 3: Create the HyDE service**
 
 ```python
 # i3d_agent/rag/hyde.py
@@ -3395,7 +3395,7 @@ class HyDEService:
             return None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_hyde.py -v
@@ -3403,7 +3403,7 @@ pytest tests/test_rag/test_hyde.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/hyde.py tests/test_rag/test_hyde.py
@@ -3418,7 +3418,7 @@ git commit -m "feat(rag): add HyDE service for hypothetical document generation"
 - Create: `i3d_agent/rag/controller.py`
 - Test: `i3d_agent/tests/test_rag/test_controller.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_controller.py
@@ -3492,7 +3492,7 @@ async def test_multi_step_reasoning():
         assert result.iterations >= 2
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_controller.py -v
@@ -3500,7 +3500,7 @@ pytest tests/test_rag/test_controller.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.controller'"
 
-- [ ] **Step 3: Create the Agentic RAG controller**
+- [x] **Step 3: Create the Agentic RAG controller**
 
 ```python
 # i3d_agent/rag/controller.py
@@ -3794,7 +3794,7 @@ class AgenticRAGController:
         await self.embedding_service.close()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_controller.py -v
@@ -3802,7 +3802,7 @@ pytest tests/test_rag/test_controller.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/controller.py tests/test_rag/test_controller.py
@@ -3819,7 +3819,7 @@ git commit -m "feat(rag): add Agentic RAG controller with multi-step reasoning"
 - Create: `i3d_agent/rag/monitor.py`
 - Test: `i3d_agent/tests/test_rag/test_monitor.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_monitor.py
@@ -3861,7 +3861,7 @@ async def test_record_metric():
         mock_execute.assert_called_once()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_monitor.py -v
@@ -3869,7 +3869,7 @@ pytest tests/test_rag/test_monitor.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.monitor'"
 
-- [ ] **Step 3: Create the monitor service**
+- [x] **Step 3: Create the monitor service**
 
 ```python
 # i3d_agent/rag/monitor.py
@@ -4143,7 +4143,7 @@ class MonitorService:
             self._pool = None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_monitor.py -v
@@ -4151,7 +4151,7 @@ pytest tests/test_rag/test_monitor.py -v
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add i3d_agent/rag/monitor.py tests/test_rag/test_monitor.py
@@ -4166,7 +4166,7 @@ git commit -m "feat(rag): add monitoring service with OpenTelemetry integration"
 - Create: `i3d_agent/rag/api.py`
 - Test: `i3d_agent/tests/test_rag/test_api.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_rag/test_api.py
@@ -4232,7 +4232,7 @@ async def test_ask():
         assert "answer" in data
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/test_rag/test_api.py -v
@@ -4240,7 +4240,7 @@ pytest tests/test_rag/test_api.py -v
 
 Expected: FAIL with "ModuleNotFoundError: No module named 'i3d_agent.rag.api'"
 
-- [ ] **Step 3: Create the RAG API routes**
+- [x] **Step 3: Create the RAG API routes**
 
 ```python
 # i3d_agent/rag/api.py
@@ -4663,7 +4663,7 @@ async def submit_feedback(
         raise HTTPException(status_code=500, detail=str(e))
 ```
 
-- [ ] **Step 4: Update main app to include RAG router**
+- [x] **Step 4: Update main app to include RAG router**
 
 ```python
 # i3d_agent/api/main.py - 更新
@@ -4673,7 +4673,7 @@ from i3d_agent.rag.api import router as rag_router
 app.include_router(rag_router)
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 ```bash
 pytest tests/test_rag/test_api.py -v
@@ -4681,7 +4681,7 @@ pytest tests/test_rag/test_api.py -v
 
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add i3d_agent/rag/api.py i3d_agent/api/main.py tests/test_rag/test_api.py
@@ -4695,7 +4695,7 @@ git commit -m "feat(rag): add RAG API routes"
 **Files:**
 - Modify: `i3d_agent/config/settings.py`
 
-- [ ] **Step 1: Add RAG configuration settings**
+- [x] **Step 1: Add RAG configuration settings**
 
 ```python
 # i3d_agent/config/settings.py - 添加到 Settings 类
@@ -4736,7 +4736,7 @@ INDEX_BATCH_SIZE: int = Field(default=10, description="索引批处理大小")
 INDEX_WORKER_CONCURRENCY: int = Field(default=2, description="索引 Worker 并发数")
 ```
 
-- [ ] **Step 2: Update .env.example**
+- [x] **Step 2: Update .env.example**
 
 ```bash
 # .env.example - 添加
@@ -4749,7 +4749,7 @@ RERANK_PROVIDER=cohere
 COHERE_API_KEY=your-cohere-api-key
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add i3d_agent/config/settings.py .env.example
@@ -4763,7 +4763,7 @@ git commit -m "feat(rag): add RAG configuration settings"
 **Files:**
 - Modify: `requirements.txt` 或 `pyproject.toml`
 
-- [ ] **Step 1: Add RAG dependencies**
+- [x] **Step 1: Add RAG dependencies**
 
 ```txt
 # requirements.txt - 添加
@@ -4779,7 +4779,7 @@ pikepdf>=8.0.0
 celery>=5.3.0
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add requirements.txt
@@ -4793,7 +4793,7 @@ git commit -m "feat(rag): add RAG dependencies"
 **Files:**
 - Modify: `i3d_agent/tools/rag_tools.py`
 
-- [ ] **Step 1: Update RAG tools to use new module**
+- [x] **Step 1: Update RAG tools to use new module**
 
 ```python
 # i3d_agent/tools/rag_tools.py - 更新
@@ -4848,7 +4848,7 @@ def retrieve_documents(
     return asyncio.run(_retrieve())
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add i3d_agent/tools/rag_tools.py
@@ -4864,7 +4864,7 @@ git commit -m "feat(rag): update RAG tools to use new module"
 **Files:**
 - Create: `i3d_agent/tests/test_rag/integration_test.py`
 
-- [ ] **Step 1: Create integration test**
+- [x] **Step 1: Create integration test**
 
 ```python
 # tests/test_rag/integration_test.py
@@ -4937,7 +4937,7 @@ async def test_agentic_rag_features():
     await controller.close()
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add tests/test_rag/integration_test.py
@@ -4951,7 +4951,7 @@ git commit -m "test(rag): add integration tests"
 **Files:**
 - Create: `scripts/run_rag_worker.py`
 
-- [ ] **Step 1: Create RAG worker startup script**
+- [x] **Step 1: Create RAG worker startup script**
 
 ```python
 #!/usr/bin/env python3
@@ -4989,7 +4989,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add scripts/run_rag_worker.py
@@ -5003,7 +5003,7 @@ git commit -m "feat(rag): add RAG worker startup script"
 **Files:**
 - Modify: `docker-compose.yml`
 
-- [ ] **Step 1: Add RAG worker service**
+- [x] **Step 1: Add RAG worker service**
 
 ```yaml
 # docker-compose.yml - 添加
@@ -5024,7 +5024,7 @@ services:
     restart: unless-stopped
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add docker-compose.yml
@@ -5038,7 +5038,7 @@ git commit -m "feat(rag): add RAG worker service to docker-compose"
 **Files:**
 - Create: `docs/RAG_MODULE.md`
 
-- [ ] **Step 1: Create RAG module documentation**
+- [x] **Step 1: Create RAG module documentation**
 
 ```markdown
 # RAG Module Documentation
@@ -5098,7 +5098,7 @@ curl -X POST http://localhost:8000/api/v1/rag/search \\
 See [API Documentation](../docs/superpowers/specs/2026-06-01-rag-module-design.md) for details.
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add docs/RAG_MODULE.md
@@ -5111,11 +5111,11 @@ git commit -m "docs(rag): add RAG module documentation"
 
 ### 验证所有任务完成
 
-- [ ] Phase 1: 基础设施（7 个任务）
-- [ ] Phase 2: 核心检索（3 个任务）
-- [ ] Phase 3: Agentic 特性（3 个任务）
-- [ ] Phase 4: 高级功能（5 个任务）
-- [ ] Phase 5: 完成与验证（4 个任务）
+- [x] Phase 1: 基础设施（7 个任务）
+- [x] Phase 2: 核心检索（3 个任务）
+- [x] Phase 3: Agentic 特性（3 个任务）
+- [x] Phase 4: 高级功能（5 个任务）
+- [x] Phase 5: 完成与验证（4 个任务）
 
 ### 运行完整测试套件
 
