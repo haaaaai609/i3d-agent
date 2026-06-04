@@ -330,6 +330,10 @@ class I3DWorkflow:
                 f"user={user_id} | tenant={tenant_id} | session={session_id}"
             )
 
+            final_response = None
+            final_sources = None
+            final_thought_process = None
+
             # 使用 astream 流式运行工作流
             async for event in self.graph.astream(
                 initial_state,
@@ -340,17 +344,13 @@ class I3DWorkflow:
                 if isinstance(event, tuple) and len(event) == 2:
                     node_name, state_update = event
 
-                    # 发送节点完成事件
-                    yield {
-                        "type": "node_update",
-                        "node": node_name,
-                        "request_id": request_id,
-                        "session_id": session_id,
-                        "state": state_update,
-                    }
-
-                    # 如果 supervisor 生成了响应（general 查询），发送内容
+                    # 如果 supervisor 生成了响应（general 查询），发送内容和完成事件
                     if node_name == "supervisor" and state_update.get("response"):
+                        final_response = state_update["response"]
+                        final_sources = state_update.get("sources")
+                        final_thought_process = state_update.get("thought_process")
+
+                        # 发送内容
                         yield {
                             "type": "content",
                             "content": state_update["response"],
@@ -359,17 +359,29 @@ class I3DWorkflow:
                             "done": False,
                         }
 
-                    # 如果 aggregator 完成，发送最终结果
+                    # 如果 aggregator 完成，保存结果
                     if node_name == "aggregator":
-                        yield {
-                            "type": "final",
-                            "response": state_update.get("response", ""),
-                            "sources": state_update.get("sources"),
-                            "thought_process": state_update.get("thought_process"),
-                            "metadata": state_update.get("metadata"),
-                            "request_id": request_id,
-                            "session_id": session_id,
-                            "done": True,
-                        }
+                        final_response = state_update.get("response", "")
+                        final_sources = state_update.get("sources")
+                        final_thought_process = state_update.get("thought_process")
+
+                        # 发送内容
+                        if final_response:
+                            yield {
+                                "type": "content",
+                                "content": final_response,
+                                "request_id": request_id,
+                                "session_id": session_id,
+                                "done": False,
+                            }
+
+            # 发送完成事件（前端期望的格式）
+            yield {
+                "type": "done",
+                "done": True,
+                "session_id": session_id,
+                "sources": final_sources,
+                "thought_process": final_thought_process,
+            }
 
         logger.info(f"[{request_id}] ✅ WORKFLOW_STREAM_COMPLETE")
