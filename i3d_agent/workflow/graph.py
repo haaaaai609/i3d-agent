@@ -340,15 +340,21 @@ class I3DWorkflow:
                 config,
                 stream_mode="updates",
             ):
-                # event 格式: (node_name, state_update)
+                # 调试：记录事件类型
+                logger.debug(f"[{request_id}] 🔍 STREAM_EVENT | type={type(event)} | content={str(event)[:200]}")
+
+                # event 格式检查
                 if isinstance(event, tuple) and len(event) == 2:
                     node_name, state_update = event
+                    logger.info(f"[{request_id}] 📦 NODE_UPDATE | node={node_name} | has_response={bool(state_update.get('response'))}")
 
                     # 如果 supervisor 生成了响应（general 查询），发送内容和完成事件
                     if node_name == "supervisor" and state_update.get("response"):
                         final_response = state_update["response"]
                         final_sources = state_update.get("sources")
                         final_thought_process = state_update.get("thought_process")
+
+                        logger.info(f"[{request_id}] 📤 SENDING_CONTENT | from=supervisor | length={len(final_response)}")
 
                         # 发送内容
                         yield {
@@ -365,6 +371,8 @@ class I3DWorkflow:
                         final_sources = state_update.get("sources")
                         final_thought_process = state_update.get("thought_process")
 
+                        logger.info(f"[{request_id}] 📤 SENDING_CONTENT | from=aggregator | length={len(final_response) if final_response else 0}")
+
                         # 发送内容
                         if final_response:
                             yield {
@@ -374,8 +382,45 @@ class I3DWorkflow:
                                 "session_id": session_id,
                                 "done": False,
                             }
+                elif isinstance(event, dict):
+                    # 处理字典格式的事件
+                    logger.debug(f"[{request_id}] 🔍 DICT_EVENT | keys={list(event.keys())}")
+                    for node_name, state_update in event.items():
+                        logger.info(f"[{request_id}] 📦 NODE_UPDATE | node={node_name} | has_response={bool(state_update.get('response'))}")
+
+                        if node_name == "supervisor" and state_update.get("response"):
+                            final_response = state_update["response"]
+                            final_sources = state_update.get("sources")
+                            final_thought_process = state_update.get("thought_process")
+
+                            logger.info(f"[{request_id}] 📤 SENDING_CONTENT | from=supervisor | length={len(final_response)}")
+
+                            yield {
+                                "type": "content",
+                                "content": state_update["response"],
+                                "request_id": request_id,
+                                "session_id": session_id,
+                                "done": False,
+                            }
+
+                        if node_name == "aggregator":
+                            final_response = state_update.get("response", "")
+                            final_sources = state_update.get("sources")
+                            final_thought_process = state_update.get("thought_process")
+
+                            logger.info(f"[{request_id}] 📤 SENDING_CONTENT | from=aggregator | length={len(final_response) if final_response else 0}")
+
+                            if final_response:
+                                yield {
+                                    "type": "content",
+                                    "content": final_response,
+                                    "request_id": request_id,
+                                    "session_id": session_id,
+                                    "done": False,
+                                }
 
             # 发送完成事件（前端期望的格式）
+            logger.info(f"[{request_id}] 📤 SENDING_DONE | final_response_length={len(final_response) if final_response else 0}")
             yield {
                 "type": "done",
                 "done": True,
