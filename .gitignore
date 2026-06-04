@@ -72,3 +72,9 @@ Thumbs.db
 data/
 logs/
 temp/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+=0.29.0
