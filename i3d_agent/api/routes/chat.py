@@ -37,7 +37,7 @@ async def workflow_stream_with_memory(
     tenant_id: str,
     session_id: str,
 ) -> AsyncIterator[str]:
-    """生成流式响应 - 使用 checkpoint 加载历史，然后流式输出。
+    """生成流式响应 - 使用工作流流式输出。
 
     Args:
         query: 用户查询
@@ -53,118 +53,25 @@ async def workflow_stream_with_memory(
 
     try:
         workflow = get_workflow()
-        config = {"configurable": {"thread_id": session_id}}
 
         # [LOG] 请求开始
         logger.info(f"[{request_id}] 📥 Request received | session={session_id} | query_preview={query[:50]}...")
 
-        # 从 checkpoint 获取历史对话
-        checkpoint = workflow.graph.get_state(config)
-        conversation_history = []
-
-        # 正确访问 checkpoint 的 values
-        if checkpoint and hasattr(checkpoint, 'values') and checkpoint.values:
-            state_values = checkpoint.values
-            conversation_history = state_values.get("conversation_history", [])
-
-        # 如果还是没有历史，尝试 metadata
-        if not conversation_history and checkpoint and hasattr(checkpoint, 'metadata'):
-            metadata = checkpoint.metadata or {}
-            conversation_history = metadata.get("messages", [])
-
-        # [LOG] 历史加载
-        logger.info(f"[{request_id}] 📚 History loaded | {len(conversation_history)} messages | session={session_id}")
-
-        # 准备消息列表
-        messages = []
-        for msg in conversation_history:
-            if isinstance(msg, dict):
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                messages.append(Message(role=role, content=content))
-            elif hasattr(msg, 'role') and hasattr(msg, 'content'):
-                messages.append(Message(role=msg.role, content=msg.content))
-
-        # 添加当前用户消息
-        messages.append(Message(role="user", content=query))
-
-        # [LOG] LLM 调用开始
-        llm_start = time.time()
-        logger.info(f"[{request_id}] 🤖 LLM call started | model=qwen-plus | messages={len(messages)}")
-
-        # LLM 流式生成
-        llm_client = get_llm_client()
-        system_prompt = """你是 I3D Agent System 的智能助手，专门帮助用户处理 3D CAD 模型搜索、技术文档查询和任务处理等相关问题。
-
-你的职责：
-1. 友好地回应用户的问候和一般性问题
-2. 记住对话历史，保持上下文连贯
-3. 解释 I3D 系统的功能和使用方法
-4. 使用简洁、专业的中文回答
-
-记住之前的对话内容，保持对话的连续性。"""
-
-        full_response = ""
-        chunk_count = 0
-        async for chunk in llm_client.generate_stream(
-            messages=messages,
-            system_prompt=system_prompt,
-            temperature=0.8,
+        # 使用工作流的流式方法
+        async for event in workflow.run_stream(
+            query=query,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            request_id=request_id,
         ):
-            chunk_count += 1
-            full_response += chunk
-            # 每 50 个 chunk 记录一次进度
-            if chunk_count % 50 == 0:
-                logger.debug(f"[{request_id}] 📝 Streaming | chunks={chunk_count} | chars={len(full_response)}")
-            data = json.dumps({
-                "type": "content",
-                "content": chunk,
-                "done": False,
-                "session_id": session_id,
-            })
+            # 转换为 SSE 格式
+            data = json.dumps(event)
             yield f"data: {data}\n\n"
-
-        # [LOG] LLM 调用完成
-        llm_duration = time.time() - llm_start
-        logger.info(f"[{request_id}] ✅ LLM completed | duration={llm_duration:.2f}s | chunks={chunk_count} | chars={len(full_response)}")
-
-        # 保存对话到 checkpoint - 使用 as_named_updates 来正确更新状态
-        try:
-            # 准备新的对话历史
-            new_history = conversation_history + [
-                {"role": "user", "content": query},
-                {"role": "assistant", "content": full_response}
-            ]
-
-            # 使用 update_state 更新，确保覆盖整个 state
-            workflow.graph.update_state(
-                config,
-                {
-                    "conversation_history": new_history,
-                    "query": query,
-                    "response": full_response,
-                    "user_id": user_id,
-                    "tenant_id": tenant_id,
-                    "session_id": session_id,
-                }
-            )
-            logger.info(f"[{request_id}] 💾 Checkpoint saved | messages={len(new_history)} | session={session_id}")
-        except Exception as save_error:
-            logger.warning(f"[{request_id}] ⚠️ Checkpoint save failed: {save_error}", exc_info=True)
-
-        # 发送完成信号
-        final_data = json.dumps({
-            "type": "done",
-            "done": True,
-            "session_id": session_id,
-            "sources": None,
-            "thought_process": None,
-        })
-        yield f"data: {final_data}\n\n"
 
         # [LOG] 请求完成
         total_duration = time.time() - start_time
-        logger.info(f"[{request_id}] ✅ Request completed | total_duration={total_duration:.2f}s | response_chars={len(full_response)}")
+        logger.info(f"[{request_id}] ✅ Stream request completed | total_duration={total_duration:.2f}s")
 
     except Exception as e:
         logger.error(f"[{request_id}] ❌ Error in workflow stream: {e}", exc_info=True)
@@ -172,6 +79,7 @@ async def workflow_stream_with_memory(
             "type": "error",
             "error": str(e),
             "done": True,
+            "session_id": session_id,
         })
         yield f"data: {error_data}\n\n"
 

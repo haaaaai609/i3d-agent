@@ -2,6 +2,7 @@
 
 import os
 import uuid
+import json
 from typing import Optional, Dict, Any, AsyncIterator
 
 from langgraph.graph import StateGraph, END
@@ -274,3 +275,101 @@ class I3DWorkflow:
             session_id=session_id,
             metadata=final_state.get("metadata"),
         )
+
+    async def run_stream(
+        self,
+        query: str,
+        user_id: str,
+        tenant_id: str,
+        session_id: str,
+        request_id: Optional[str] = None,
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """运行工作流并流式返回状态更新。
+
+        Args:
+            query: 用户查询
+            user_id: 用户 ID
+            tenant_id: 租户 ID
+            session_id: 会话 ID
+            request_id: 请求 ID（用于日志追踪）
+
+        Yields:
+            状态更新字典，包含 type 和相关数据
+        """
+        if request_id is None:
+            request_id = str(uuid.uuid4())[:8]
+
+        initial_state: WorkflowState = {
+            "query": query,
+            "user_id": user_id,
+            "tenant_id": tenant_id,
+            "session_id": session_id,
+            "stream": True,
+            "request_id": request_id,
+            "messages": [],
+            "conversation_history": [],
+            "sub_tasks": [],
+            "current_task_index": 0,
+            "pending_clarification": None,
+            "clarification_answer": None,
+            "error": None,
+            "response": None,
+            "sources": None,
+            "thought_process": None,
+            "metadata": None,
+            "next_action": None,
+            "should_continue": True,
+        }
+
+        config = {"configurable": {"thread_id": session_id}}
+
+        # 使用工作流上下文管理器
+        with workflow_context(request_id):
+            logger.info(
+                f"[{request_id}] 🚀 WORKFLOW_STREAM_INVOKING | query_preview={query[:50]}... | "
+                f"user={user_id} | tenant={tenant_id} | session={session_id}"
+            )
+
+            # 使用 astream 流式运行工作流
+            async for event in self.graph.astream(
+                initial_state,
+                config,
+                stream_mode="updates",
+            ):
+                # event 格式: (node_name, state_update)
+                if isinstance(event, tuple) and len(event) == 2:
+                    node_name, state_update = event
+
+                    # 发送节点完成事件
+                    yield {
+                        "type": "node_update",
+                        "node": node_name,
+                        "request_id": request_id,
+                        "session_id": session_id,
+                        "state": state_update,
+                    }
+
+                    # 如果 supervisor 生成了响应（general 查询），发送内容
+                    if node_name == "supervisor" and state_update.get("response"):
+                        yield {
+                            "type": "content",
+                            "content": state_update["response"],
+                            "request_id": request_id,
+                            "session_id": session_id,
+                            "done": False,
+                        }
+
+                    # 如果 aggregator 完成，发送最终结果
+                    if node_name == "aggregator":
+                        yield {
+                            "type": "final",
+                            "response": state_update.get("response", ""),
+                            "sources": state_update.get("sources"),
+                            "thought_process": state_update.get("thought_process"),
+                            "metadata": state_update.get("metadata"),
+                            "request_id": request_id,
+                            "session_id": session_id,
+                            "done": True,
+                        }
+
+        logger.info(f"[{request_id}] ✅ WORKFLOW_STREAM_COMPLETE")
