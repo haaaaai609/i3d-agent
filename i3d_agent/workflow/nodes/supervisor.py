@@ -75,12 +75,26 @@ async def supervisor_node(state: WorkflowState) -> WorkflowState:
         return state
 
     # Create task for specialized agents
+    # 根据不同的 agent 类型设置不同的 input_data 字段
+    task_type = intent_result["task_type"]
+    input_data = {"tenant_id": tenant_id}
+
+    if task_type == "search":
+        input_data["query"] = query
+        input_data["search_type"] = "3d"
+    elif task_type == "rag":
+        input_data["question"] = query  # RAG 期望 "question" 字段
+    elif task_type == "process":
+        input_data["query"] = query
+    else:
+        input_data["query"] = query
+
     task = SubTask(
         task_id=str(uuid.uuid4()),
-        task_type=intent_result["task_type"],
+        task_type=task_type,
         agent=intent_result["agent"],
         status="pending",
-        input_data={"query": query, "tenant_id": tenant_id},
+        input_data=input_data,
     )
 
     state["sub_tasks"] = [task]
