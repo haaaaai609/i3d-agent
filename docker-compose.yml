@@ -32,6 +32,7 @@ services:
       - DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
       - DEFAULT_LLM_PROVIDER=dashscope
       - DEFAULT_LLM_MODEL=qwen-plus
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-v3}
       # External Services (复用现有 MinIO)
       - MINIO_API_URL=http://host.docker.internal:19002
       - INFER_ENGINEER_URL=http://host.docker.internal:18000
