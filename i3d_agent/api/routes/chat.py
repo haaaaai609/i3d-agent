@@ -198,6 +198,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
         session_id=request.session_id,
     )
 
+    # 生成请求 ID
+    request_id = str(uuid.uuid4())[:8]
+
     try:
         logger.info(f"Received chat request from user {request.user_id}")
 
@@ -213,6 +216,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             tenant_id=request.tenant_id,
             session_id=session_id,
             stream=request.stream,
+            request_id=request_id,
         )
 
         logger.info(f"Chat request completed for user {request.user_id}")

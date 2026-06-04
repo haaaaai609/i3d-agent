@@ -5,9 +5,14 @@ from typing import Dict, Any
 from i3d_agent.agents.search import SearchAgent
 from i3d_agent.agents.base import NeedsClarificationError, AgentError
 from i3d_agent.workflow.state import WorkflowState, SubTask, ClarificationRequest, ErrorInfo
+from i3d_agent.workflow.utils import log_agent_execution, log_task_status, log_error_handling
+from i3d_agent.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 async def search_agent_node(state: WorkflowState) -> WorkflowState:
+    request_id = state.get("request_id", "unknown")
     sub_tasks = state.get("sub_tasks", [])
     tenant_id = state["tenant_id"]
 
@@ -18,13 +23,23 @@ async def search_agent_node(state: WorkflowState) -> WorkflowState:
             break
 
     if not current_task:
+        log_agent_execution(request_id, "search_agent", "no_pending_task")
         return state
 
     current_task.status = "running"
+    log_task_status(request_id, current_task, "started")
 
     try:
         agent = SearchAgent()
         input_data = current_task.input_data
+
+        log_agent_execution(
+            request_id,
+            "search_agent",
+            "executing",
+            query=input_data.get("query", "")[:50],
+            search_type=input_data.get("search_type", "3d")
+        )
 
         result = agent.search(
             query=input_data.get("query", ""),
@@ -36,9 +51,16 @@ async def search_agent_node(state: WorkflowState) -> WorkflowState:
         current_task.status = "completed"
         current_task.output_data = result
 
+        results_count = len(result.get("results", [])) if result else 0
+        log_agent_execution(request_id, "search_agent", "completed", results_count=results_count)
+        log_task_status(request_id, current_task, "completed")
+
     except NeedsClarificationError as e:
         current_task.status = "needs_clarification"
         current_task.error_message = str(e)
+
+        log_agent_execution(request_id, "search_agent", "needs_clarification", question=str(e.question))
+        log_task_status(request_id, current_task, "needs_clarification")
 
         state["pending_clarification"] = ClarificationRequest(
             task_id=current_task.task_id,
@@ -58,6 +80,9 @@ async def search_agent_node(state: WorkflowState) -> WorkflowState:
 
         current_task.status = "failed"
         current_task.error_message = error_message
+
+        log_error_handling(request_id, current_task.task_id, error_type, error_message)
+        log_task_status(request_id, current_task, "failed")
 
         state["error"] = ErrorInfo(
             task_id=current_task.task_id,
