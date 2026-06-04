@@ -56,10 +56,11 @@ class Settings(BaseSettings):
         default="https://dashscope.aliyuncs.com/compatible-mode/v1",
         description="DashScope base URL"
     )
-    COHERE_API_KEY: str = Field(default="", description="Cohere API key")
+    # Cohere API key (deprecated, using DashScope for reranking now)
+    COHERE_API_KEY: str = Field(default="", description="Cohere API key (deprecated)")
     COHERE_RERANK_MODEL: str = Field(
         default="rerank-english-v2.0",
-        description="Cohere rerank model"
+        description="Cohere rerank model (deprecated)"
     )
     DEFAULT_LLM_PROVIDER: str = Field(default="anthropic", description="Default LLM provider (anthropic, openai, dashscope)")
     DEFAULT_LLM_MODEL: str = Field(
@@ -149,8 +150,8 @@ class Settings(BaseSettings):
     AGENTIC_ENABLE_RERANK: bool = Field(default=True, description="Enable reranking")
 
     # RAG Rerank Configuration
-    RERANK_PROVIDER: str = Field(default="cohere", description="Rerank service provider")
-    RERANK_MODEL: str = Field(default="rerank-english-v2.0", description="Rerank model")
+    RERANK_PROVIDER: str = Field(default="dashscope", description="Rerank service provider (dashscope, cohere)")
+    RERANK_MODEL: str = Field(default="qwen3-vl-rerank", description="Rerank model")
 
     # RAG Index Configuration
     INDEX_BATCH_SIZE: int = Field(default=10, description="Index batch size")

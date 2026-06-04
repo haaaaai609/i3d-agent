@@ -2,6 +2,7 @@
 
 import uuid
 import json
+import time
 from typing import Optional, AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -47,9 +48,15 @@ async def workflow_stream_with_memory(
     Yields:
         Server-Sent Events 格式的数据块
     """
+    start_time = time.time()
+    request_id = str(uuid.uuid4())[:8]
+
     try:
         workflow = get_workflow()
         config = {"configurable": {"thread_id": session_id}}
+
+        # [LOG] 请求开始
+        logger.info(f"[{request_id}] 📥 Request received | session={session_id} | query_preview={query[:50]}...")
 
         # 从 checkpoint 获取历史对话
         checkpoint = workflow.graph.get_state(config)
@@ -59,16 +66,14 @@ async def workflow_stream_with_memory(
         if checkpoint and hasattr(checkpoint, 'values') and checkpoint.values:
             state_values = checkpoint.values
             conversation_history = state_values.get("conversation_history", [])
-            logger.info(f"Checkpoint values keys: {list(state_values.keys()) if isinstance(state_values, dict) else 'N/A'}")
-            logger.info(f"Loaded conversation_history: {conversation_history}")
 
         # 如果还是没有历史，尝试 metadata
         if not conversation_history and checkpoint and hasattr(checkpoint, 'metadata'):
             metadata = checkpoint.metadata or {}
             conversation_history = metadata.get("messages", [])
-            logger.info(f"Loaded from metadata.messages: {conversation_history}")
 
-        logger.info(f"Total loaded {len(conversation_history)} messages from history for session {session_id}")
+        # [LOG] 历史加载
+        logger.info(f"[{request_id}] 📚 History loaded | {len(conversation_history)} messages | session={session_id}")
 
         # 准备消息列表
         messages = []
@@ -83,6 +88,10 @@ async def workflow_stream_with_memory(
         # 添加当前用户消息
         messages.append(Message(role="user", content=query))
 
+        # [LOG] LLM 调用开始
+        llm_start = time.time()
+        logger.info(f"[{request_id}] 🤖 LLM call started | model=qwen-plus | messages={len(messages)}")
+
         # LLM 流式生成
         llm_client = get_llm_client()
         system_prompt = """你是 I3D Agent System 的智能助手，专门帮助用户处理 3D CAD 模型搜索、技术文档查询和任务处理等相关问题。
@@ -96,12 +105,17 @@ async def workflow_stream_with_memory(
 记住之前的对话内容，保持对话的连续性。"""
 
         full_response = ""
+        chunk_count = 0
         async for chunk in llm_client.generate_stream(
             messages=messages,
             system_prompt=system_prompt,
             temperature=0.8,
         ):
+            chunk_count += 1
             full_response += chunk
+            # 每 50 个 chunk 记录一次进度
+            if chunk_count % 50 == 0:
+                logger.debug(f"[{request_id}] 📝 Streaming | chunks={chunk_count} | chars={len(full_response)}")
             data = json.dumps({
                 "type": "content",
                 "content": chunk,
@@ -109,6 +123,10 @@ async def workflow_stream_with_memory(
                 "session_id": session_id,
             })
             yield f"data: {data}\n\n"
+
+        # [LOG] LLM 调用完成
+        llm_duration = time.time() - llm_start
+        logger.info(f"[{request_id}] ✅ LLM completed | duration={llm_duration:.2f}s | chunks={chunk_count} | chars={len(full_response)}")
 
         # 保存对话到 checkpoint - 使用 as_named_updates 来正确更新状态
         try:
@@ -130,9 +148,9 @@ async def workflow_stream_with_memory(
                     "session_id": session_id,
                 }
             )
-            logger.info(f"Saved {len(new_history)} messages to checkpoint for session {session_id}")
+            logger.info(f"[{request_id}] 💾 Checkpoint saved | messages={len(new_history)} | session={session_id}")
         except Exception as save_error:
-            logger.warning(f"Failed to save checkpoint: {save_error}", exc_info=True)
+            logger.warning(f"[{request_id}] ⚠️ Checkpoint save failed: {save_error}", exc_info=True)
 
         # 发送完成信号
         final_data = json.dumps({
@@ -144,8 +162,12 @@ async def workflow_stream_with_memory(
         })
         yield f"data: {final_data}\n\n"
 
+        # [LOG] 请求完成
+        total_duration = time.time() - start_time
+        logger.info(f"[{request_id}] ✅ Request completed | total_duration={total_duration:.2f}s | response_chars={len(full_response)}")
+
     except Exception as e:
-        logger.error(f"Error in workflow stream: {e}", exc_info=True)
+        logger.error(f"[{request_id}] ❌ Error in workflow stream: {e}", exc_info=True)
         error_data = json.dumps({
             "type": "error",
             "error": str(e),
@@ -228,10 +250,11 @@ async def chat_stream(request: ChatRequest):
     )
 
     try:
-        logger.info(f"Received stream chat request from user {request.user_id}")
+        session_id = request.session_id or str(uuid.uuid4())
+        logger.info(f"📨 Stream chat request | user={request.user_id} | tenant={request.tenant_id} | session={session_id} | query_preview={request.message[:50]}...")
 
         # 生成 session_id（如果未提供）
-        session_id = request.session_id or str(uuid.uuid4())
+        # session_id = request.session_id or str(uuid.uuid4())  # 已经在上面生成
 
         return StreamingResponse(
             workflow_stream_with_memory(

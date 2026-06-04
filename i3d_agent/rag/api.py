@@ -3,6 +3,7 @@
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
+import asyncpg
 
 from i3d_agent.rag.models import (
     DocumentCreate, DocumentUpdate, DocumentResponse,
@@ -13,17 +14,36 @@ from i3d_agent.rag.controller import AgenticRAGController
 from i3d_agent.rag.monitor import MonitorService
 from i3d_agent.rag.index_worker import IndexWorker
 from i3d_agent.utils.logger import get_logger
+from i3d_agent.config.settings import get_settings
 
 logger = get_logger(__name__)
+settings = get_settings()
 
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG"])
+
+# ========== 全局数据库池 ==========
+
+_db_pool: Optional[asyncpg.Pool] = None
+
+
+async def get_db_pool() -> asyncpg.Pool:
+    """获取或创建数据库连接池"""
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(
+            settings.DATABASE_URL.replace("postgresql+psycopg2://", "postgresql://"),
+            min_size=2,
+            max_size=10
+        )
+        logger.info("Database pool created for RAG API")
+    return _db_pool
 
 
 # ========== 依赖注入 ==========
 
-async def get_document_manager() -> DocumentManager:
+async def get_document_manager(pool: asyncpg.Pool = Depends(get_db_pool)) -> DocumentManager:
     """获取文档管理器实例"""
-    return DocumentManager()
+    return DocumentManager(pool=pool)
 
 
 async def get_rag_controller() -> AgenticRAGController:
@@ -326,14 +346,11 @@ async def get_index_status(
 async def get_index_queue(
     tenant_id: str,
     status: Optional[str] = None,
-    limit: int = 50
+    limit: int = 50,
+    pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """获取索引队列"""
     try:
-        from i3d_agent.config.settings import get_settings
-        settings = get_settings()
-        pool = await (await DocumentManager()._get_pool()).acquire()
-
         conditions = ["tenant_id = $1"]
         params = [tenant_id]
         param_count = 1

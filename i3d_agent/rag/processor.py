@@ -61,10 +61,7 @@ class DocumentProcessor:
         # 按标题切分
         sections = self._split_by_headings(content)
 
-        # 合并过小的节
-        sections = self._merge_small_sections(sections, self.config.technical_size)
-
-        # 处理每个节，进行内容切分
+        # 不再合并节，直接切分每个节
         chunks = []
         for i, section in enumerate(sections):
             section_chunks = self._split_section(
@@ -153,7 +150,7 @@ class DocumentProcessor:
         title: Optional[str] = None,
         language: str = "zh"
     ) -> List[Dict[str, Any]]:
-        """按段落切分文档"""
+        """按段落切分文档（使用字符长度）"""
         if not content or not content.strip():
             return []
 
@@ -163,6 +160,7 @@ class DocumentProcessor:
         chunks = []
         current_chunk = ""
         current_paragraphs = []
+        max_chars = self.config.business_size * 2  # token 转字符
 
         for para in paragraphs:
             para = para.strip()
@@ -170,7 +168,7 @@ class DocumentProcessor:
                 continue
 
             # 如果当前段落加上后会超过限制，先保存当前 chunk
-            if current_chunk and self.estimate_tokens(current_chunk + "\n\n" + para) > self.config.business_size:
+            if current_chunk and len(current_chunk + "\n\n" + para) > max_chars:
                 if current_chunk:
                     chunks.append({
                         'content': current_chunk,
@@ -303,17 +301,21 @@ class DocumentProcessor:
         return sections
 
     def _merge_small_sections(self, sections: List[Dict[str, str]], max_size: int) -> List[Dict[str, str]]:
-        """合并过小的节"""
+        """合并过小的节（使用字符长度而非 token 估算）"""
         if not sections:
             return sections
 
         merged = []
         current_chunk = sections[0]
+        # 使用字符长度作为合并依据，避免 token 估算不准确的问题
+        # 中文约 1.5 字符 = 1 token，所以 max_size tokens ≈ max_size * 1.5 chars
+        max_chars = max_size * 2  # 使用更保守的 2x 倍数
 
         for section in sections[1:]:
             combined_content = current_chunk['content'] + "\n\n" + section['content']
+            combined_length = len(combined_content)
 
-            if self.estimate_tokens(combined_content) <= max_size:
+            if combined_length <= max_chars:
                 # 合并
                 current_chunk = {
                     'heading': current_chunk['heading'],
@@ -334,12 +336,16 @@ class DocumentProcessor:
         overlap: int,
         code_blocks: List[Dict[str, str]]
     ) -> List[Dict[str, str]]:
-        """切分单个节"""
+        """切分单个节（使用字符长度，包含硬切分回退）"""
         content = section['content']
         heading = section['heading']
 
+        # 使用字符长度作为切分依据
+        max_chars = chunk_size * 2  # token 转字符的倍数
+        overlap_chars = overlap * 2
+
         # 如果内容在限制内，不需要切分
-        if self.estimate_tokens(content) <= chunk_size:
+        if len(content) <= max_chars:
             return [{
                 'content': self._restore_code_blocks(content, code_blocks),
                 'metadata': {
@@ -352,6 +358,11 @@ class DocumentProcessor:
         sentences = re.split(r'([。！？\.!?])', content)
         sentences = [''.join(pair) for pair in zip(sentences[0::2], sentences[1::2]) if pair[0]]
 
+        # 检查句子切分是否有效（如果所有"句子"都很长，说明切分失败）
+        if sentences and all(len(s) > max_chars for s in sentences if s.strip()):
+            # 句子切分失败，使用字符级硬切分作为回退
+            return self._split_by_chars(content, heading, max_chars, overlap_chars, code_blocks)
+
         chunks = []
         current_chunk = ""
         chunk_index = 0
@@ -359,7 +370,7 @@ class DocumentProcessor:
         for i, sentence in enumerate(sentences):
             test_chunk = current_chunk + sentence if current_chunk else sentence
 
-            if self.estimate_tokens(test_chunk) <= chunk_size:
+            if len(test_chunk) <= max_chars:
                 current_chunk = test_chunk
             else:
                 # 保存当前 chunk
@@ -374,9 +385,9 @@ class DocumentProcessor:
                     chunk_index += 1
 
                 # 开始新 chunk（带 overlap）
-                if overlap > 0:
+                if overlap_chars > 0:
                     # 获取最近的几个句子作为 overlap
-                    overlap_sentences = self._get_overlap_sentences(sentences, i, overlap)
+                    overlap_sentences = self._get_overlap_sentences_by_chars(sentences, i, overlap_chars)
                     current_chunk = ''.join(overlap_sentences) + sentence
                 else:
                     current_chunk = sentence
@@ -393,6 +404,48 @@ class DocumentProcessor:
 
         return chunks
 
+    def _split_by_chars(
+        self,
+        content: str,
+        heading: str,
+        max_chars: int,
+        overlap_chars: int,
+        code_blocks: List[Dict[str, str]]
+    ) -> List[Dict[str, str]]:
+        """字符级硬切分（当句子切分失败时使用）"""
+        chunks = []
+        chunk_index = 0
+        start = 0
+        content_length = len(content)
+
+        while start < content_length:
+            # 计算当前 chunk 的结束位置
+            end = min(start + max_chars, content_length)
+
+            # 如果不是最后一块，尝试在空格或换行处切分
+            if end < content_length:
+                # 往回找最近的换行或空格
+                for i in range(end, max(start, end - 100), -1):
+                    if content[i] in '\n \t':
+                        end = i + 1
+                        break
+
+            # 提取当前 chunk
+            chunk_content = content[start:end]
+            chunks.append({
+                'content': self._restore_code_blocks(chunk_content, code_blocks),
+                'metadata': {
+                    'section': heading,
+                    'chunk_index': chunk_index
+                }
+            })
+            chunk_index += 1
+
+            # 移动 start 位置（考虑 overlap）
+            start = end - overlap_chars if end < content_length else end
+
+        return chunks
+
     def _get_overlap_sentences(self, sentences: List[str], current_index: int, overlap_tokens: int) -> List[str]:
         """获取用于重叠的句子"""
         overlap_sentences = []
@@ -406,6 +459,24 @@ class DocumentProcessor:
             if token_count + sentence_tokens <= overlap_tokens:
                 overlap_sentences.insert(0, sentence)
                 token_count += sentence_tokens
+            else:
+                break
+
+        return overlap_sentences
+
+    def _get_overlap_sentences_by_chars(self, sentences: List[str], current_index: int, overlap_chars: int) -> List[str]:
+        """获取用于重叠的句子（基于字符长度）"""
+        overlap_sentences = []
+        char_count = 0
+
+        # 从当前句子往前找
+        for i in range(current_index - 1, -1, -1):
+            sentence = sentences[i]
+            sentence_chars = len(sentence)
+
+            if char_count + sentence_chars <= overlap_chars:
+                overlap_sentences.insert(0, sentence)
+                char_count += sentence_chars
             else:
                 break
 

@@ -735,4 +735,88 @@ d035480 - feat: add base agent class
 
 ---
 
-*最后更新: 2026-06-01*
+*最后更新: 2026-06-04*
+
+---
+
+## Phase 10: 可观测性改进 🚧
+
+**开始时间**: 2026-06-04
+**状态**: 进行中
+
+### 任务清单
+
+| 任务 | 描述 | 状态 |
+|------|------|------|
+| 10.1 | 全流程日志链路 | ✅ 已完成 |
+| 10.2 | OpenTelemetry 集成 | ⏸️ 待实现 |
+
+### 完成内容
+
+#### Task 10.1: 全流程日志链路 (2026-06-04)
+
+**文件**: `i3d_agent/api/routes/chat.py` (改进)
+
+**新增日志**:
+- 📨 请求入口（用户、租户、session、query预览）
+- 📥 唯一请求ID `[request_id]` 用于全链路追踪
+- 📚 历史消息加载情况
+- 🤖 LLM 调用详情（模型、消息数、耗时、chunk数、字符数）
+- 💾 Checkpoint 保存状态
+- ✅ 总请求完成（总耗时、响应长度）
+
+**查看日志**:
+```bash
+docker logs -f i3d-agent-system-i3d-agent-api-1
+```
+
+**日志示例**:
+```
+📨 Stream chat request | user=demo_user | tenant=huabei | session=xxx | query_preview=...
+[abc12345] 📥 Request received | session=xxx | query_preview=...
+[abc12345] 📚 History loaded | 2 messages | session=xxx
+[abc12345] 🤖 LLM call started | model=qwen-plus | messages=3
+[abc12345] ✅ LLM completed | duration=2.34s | chunks=15 | chars=234
+[abc12345] 💾 Checkpoint saved | messages=4 | session=xxx
+[abc12345] ✅ Request completed | total_duration=2.51s | response_chars=234
+```
+
+---
+
+#### Task 10.2: OpenTelemetry 分布式追踪 (待实现)
+
+**目标**: 实现端到端的分布式追踪，支持：
+- Trace ID 贯穿整个请求流程
+- Span 记录各关键节点（API、Workflow、RAG、LLM、工具调用）
+- 性能指标采集（各环节耗时）
+- 与 Jaeger/Tempo 集成可视化
+
+**设计方案**: 见 `docs/system/OPENTELEMETRY_DESIGN.md` (待创建)
+
+**技术栈**:
+- OpenTelemetry SDK
+- OTLP Span Exporter
+- Jaeger 或 Grafana Tempo 作为后端
+- FastAPI/HTTPX 自动插桩
+
+**待实现项**:
+- [ ] 启用 `ENABLE_TRACING=true` 配置
+- [ ] 创建 `agent_execution_traces` 表存储追踪数据
+- [ ] 实现统一 Trace 上下文传递
+- [ ] 关键节点添加 Span（RAG、LLM、工具调用）
+- [ ] 对话历史持久化到 `agent_conversation_history`
+- [ ] 日志与 Trace 关联（log 中包含 trace_id）
+
+---
+
+### Phase 10 进度
+
+```
+███░░░░░░░░░░░░░░░░░░░  30%
+├─ 10.1 全流程日志链路    ✅ 100%
+└─ 10.2 OpenTelemetry    ⏸️ 0%
+```
+
+---
+
+*最后更新: 2026-06-04*

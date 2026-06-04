@@ -64,11 +64,59 @@ class EmbeddingService:
             logger.warning("Empty chunk list provided for embedding")
             return []
 
-        # 提取所有文本内容
-        texts = [chunk.get("content", "") for chunk in chunks]
+        # DashScope API 限制：
+        # - 输入文本总长度不能超过 8192 字符
+        # - 每批最多 10 个 chunks
+        MAX_BATCH_CHARS = 7000  # 留一些余量
+        MAX_BATCH_SIZE = 10  # DashScope API 限制
+        results = []
 
-        # 批量生成 embedding
+        current_batch = []
+        current_batch_chars = 0
+
+        for chunk in chunks:
+            content = chunk.get("content", "")
+            content_chars = len(content)
+
+            # 如果单个 chunk 就超过限制，截断它
+            if content_chars > MAX_BATCH_CHARS:
+                logger.warning(f"Chunk too long ({content_chars} chars), truncating to {MAX_BATCH_CHARS}")
+                # 创建修改后的 chunk 副本
+                chunk = {**chunk, "content": content[:MAX_BATCH_CHARS]}
+                content_chars = MAX_BATCH_CHARS
+
+            # 检查是否需要开始新批次（字符长度或数量限制）
+            should_start_new_batch = False
+            if current_batch_chars + content_chars > MAX_BATCH_CHARS and current_batch:
+                should_start_new_batch = True
+            elif len(current_batch) >= MAX_BATCH_SIZE:
+                should_start_new_batch = True
+
+            if should_start_new_batch:
+                # 处理当前批次
+                batch_embeddings = await self._process_batch(current_batch)
+                results.extend(batch_embeddings)
+                # 开始新批次
+                current_batch = [chunk]
+                current_batch_chars = content_chars
+            else:
+                current_batch.append(chunk)
+                current_batch_chars += content_chars
+
+        # 处理最后一批
+        if current_batch:
+            batch_embeddings = await self._process_batch(current_batch)
+            results.extend(batch_embeddings)
+
+        logger.info(f"Generated embeddings for {len(results)} chunks")
+        return results
+
+    async def _process_batch(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """处理一批 chunks，生成 embedding"""
+        texts = [chunk.get("content", "") for chunk in chunks]
+        logger.debug(f"Processing batch: {len(chunks)} chunks, total chars: {sum(len(t) for t in texts)}")
         embeddings = await self._call_embedding_api(texts)
+        logger.debug(f"Got {len(embeddings)} embeddings from API")
 
         # 将 embedding 添加到每个 chunk
         results = []
@@ -142,9 +190,16 @@ class EmbeddingService:
 
             result = response.json()
 
-            # DashScope 响应格式: {"outputs": {"embeddings": [{"embedding": [...]}]}}
-            embeddings = result.get("outputs", {}).get("embeddings", [])
-            return [item["embedding"] for item in embeddings]
+            # DashScope 兼容模式返回 OpenAI 格式: {"data": [{"embedding": [...]}]}
+            # 原生格式: {"outputs": {"embeddings": [{"embedding": [...]}]}}
+            if "data" in result:
+                # OpenAI 兼容模式
+                embeddings = result.get("data", [])
+                return [item["embedding"] for item in embeddings]
+            else:
+                # DashScope 原生格式
+                embeddings = result.get("outputs", {}).get("embeddings", [])
+                return [item["embedding"] for item in embeddings]
 
         except httpx.HTTPStatusError as e:
             logger.error(f"DashScope API error: {e.response.status_code} - {e.response.text}")

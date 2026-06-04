@@ -4,6 +4,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import hashlib
 import uuid
+import json
 import asyncpg
 
 
@@ -45,10 +46,10 @@ class DocumentManager:
             return await self.pool.acquire()
         raise RuntimeError("No database connection available")
 
-    def _release_connection(self, conn: asyncpg.Connection):
+    async def _release_connection(self, conn: asyncpg.Connection):
         """Release connection back to pool."""
         if self.pool and conn != self._conn:
-            self.pool.release(conn)
+            await self.pool.release(conn)
 
     async def create_document(
         self,
@@ -108,7 +109,7 @@ class DocumentManager:
             return doc
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def update_document(
         self,
@@ -205,7 +206,7 @@ class DocumentManager:
             return updated
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def delete_document(
         self,
@@ -257,7 +258,7 @@ class DocumentManager:
             return True
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def restore_document(
         self,
@@ -308,7 +309,7 @@ class DocumentManager:
             return await self.get_document(doc_id)
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def get_document(
         self,
@@ -340,7 +341,7 @@ class DocumentManager:
             return self._row_to_document_response(doc)
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def get_document_history(
         self,
@@ -366,7 +367,7 @@ class DocumentManager:
             )
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def list_documents(
         self,
@@ -403,7 +404,7 @@ class DocumentManager:
             return [self._row_to_document_response(row) for row in rows]
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     # ========================================================================
     # Private helper methods
@@ -441,11 +442,15 @@ class DocumentManager:
             RETURNING *
         """
 
+        # Convert metadata and tags to JSON
+        metadata_json = json.dumps(metadata) if metadata else None
+        tags_array = list(tags) if tags else []
+
         row = await conn.fetchrow(
             query,
             doc_id, tenant_id, title, description, doc_type, source_type,
             content, content_hash, version, is_latest, parent_doc_id,
-            'pending', metadata or {}, tags or [], language
+            'pending', metadata_json, tags_array, language
         )
 
         return self._row_to_document_response(row)
@@ -641,6 +646,22 @@ class DocumentManager:
 
     def _row_to_document_response(self, row: Dict[str, Any]) -> DocumentResponse:
         """Convert database row to DocumentResponse."""
+        # Handle metadata - could be None, dict, or JSON string
+        metadata = row.get('metadata')
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata) if metadata else {}
+        elif metadata is None:
+            metadata = {}
+        else:
+            metadata = dict(metadata)
+
+        # Handle tags - could be None, list
+        tags = row.get('tags')
+        if tags is None:
+            tags = []
+        elif not isinstance(tags, list):
+            tags = list(tags)
+
         return DocumentResponse(
             id=str(row['id']),
             tenant_id=row['tenant_id'],
@@ -651,8 +672,8 @@ class DocumentManager:
             version=row['version'],
             is_latest=row['is_latest'],
             status=row['status'],
-            metadata=dict(row.get('metadata', {})),
-            tags=list(row.get('tags', [])),
+            metadata=metadata,
+            tags=tags,
             language=row['language'],
             created_at=row['created_at'],
             updated_at=row['updated_at']

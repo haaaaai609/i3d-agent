@@ -1,4 +1,4 @@
-"""Rerank service for improving retrieval quality using Cohere Rerank API."""
+"""Rerank service for improving retrieval quality using DashScope Qwen3-VL-Rerank API."""
 
 from typing import List, Dict, Any, Optional
 import httpx
@@ -9,7 +9,7 @@ logger = get_logger(__name__)
 
 
 class RerankService:
-    """Rerank 服务 - 使用 Cohere API 对检索结果重排序"""
+    """Rerank 服务 - 使用 DashScope Qwen3-VL-Rerank API 对检索结果重排序"""
 
     def __init__(self):
         self.settings = get_settings()
@@ -42,37 +42,40 @@ class RerankService:
             return []
 
         # 如果没有 API key，直接返回原始顺序
-        if not self.settings.COHERE_API_KEY:
-            logger.debug("No Cohere API key configured, returning original order")
+        if not self.settings.DASHSCOPE_API_KEY:
+            logger.debug("No DashScope API key configured, returning original order")
             return list(chunks[:top_k])
+
+        # 如果 chunks 数量小于等于 top_k，直接返回
+        if len(chunks) <= top_k:
+            return list(chunks)
 
         # 提取 chunk 内容
         documents = [self._extract_content(chunk) for chunk in chunks]
 
         try:
-            # 调用 Cohere Rerank API
-            rerank_results = await self._call_cohere_rerank(
+            # 调用 DashScope Rerank API
+            rerank_results = await self._call_dashscope_rerank(
                 await self._get_client(),
                 query,
-                documents
+                documents,
+                top_n=top_k
             )
 
             # 根据返回的索引重新排序 chunks
             reranked_chunks = []
-            for result in rerank_results[:top_k]:
+            for result in rerank_results:
                 index = result.get("index")
                 if 0 <= index < len(chunks):
-                    reranked_chunks.append(chunks[index])
-
-            # 如果 API 返回的结果少于 top_k，补充原始顺序的结果
-            if len(reranked_chunks) < top_k:
-                remaining_indices = set(range(len(chunks))) - {
-                    r.get("index") for r in rerank_results if "index" in r
-                }
-                for idx in sorted(remaining_indices):
-                    if len(reranked_chunks) >= top_k:
-                        break
-                    reranked_chunks.append(chunks[idx])
+                    chunk = chunks[index]
+                    # 更新 relevance score
+                    score = result.get("relevance_score")
+                    if score is not None:
+                        if hasattr(chunk, "final_score"):
+                            chunk.final_score = score
+                        elif isinstance(chunk, dict):
+                            chunk["final_score"] = score
+                    reranked_chunks.append(chunk)
 
             logger.info(f"Reranked {len(reranked_chunks)} chunks for query: {query[:50]}...")
             return reranked_chunks
@@ -97,18 +100,20 @@ class RerankService:
             # 假设是对象，尝试获取 content 属性
             return getattr(chunk, "content", "")
 
-    async def _call_cohere_rerank(
+    async def _call_dashscope_rerank(
         self,
         client: httpx.AsyncClient,
         query: str,
-        documents: List[str]
+        documents: List[str],
+        top_n: int
     ) -> List[Dict[str, Any]]:
-        """调用 Cohere Rerank API
+        """调用 DashScope Qwen3-VL-Rerank API
 
         Args:
             client: HTTP 客户端
             query: 查询文本
             documents: 文档列表
+            top_n: 返回的前 N 个结果
 
         Returns:
             重排序结果列表，每个结果包含 index 和 relevance_score
@@ -116,20 +121,23 @@ class RerankService:
         Raises:
             Exception: API 调用失败时抛出异常
         """
-        url = "https://api.cohere.ai/v1/rerank"
+        url = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
 
         headers = {
-            "Authorization": f"Bearer {self.settings.COHERE_API_KEY}",
-            "Content-Type": "application/json",
-            "X-Client-Name": "i3d-agent-system"
+            "Authorization": f"Bearer {self.settings.DASHSCOPE_API_KEY}",
+            "Content-Type": "application/json"
         }
 
         data = {
-            "model": self.settings.COHERE_RERANK_MODEL,
-            "query": query,
-            "documents": documents,
-            "top_n": len(documents),
-            "return_documents": False
+            "model": "qwen3-vl-rerank",
+            "input": {
+                "query": query,
+                "documents": documents
+            },
+            "parameters": {
+                "return_documents": False,
+                "top_n": top_n
+            }
         }
 
         try:
@@ -138,14 +146,18 @@ class RerankService:
 
             result = response.json()
 
-            # Cohere 响应格式: {"results": [{"index": 0, "relevance_score": 0.95}, ...]}
-            return result.get("results", [])
+            # DashScope 响应格式: {"output": {"results": [{"index": 0, "relevance_score": 0.95}, ...]}}
+            if "output" in result and "results" in result["output"]:
+                return result["output"]["results"]
+            else:
+                logger.warning(f"Unexpected DashScope API response format: {result}")
+                return []
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Cohere API error: {e.response.status_code} - {e.response.text}")
+            logger.error(f"DashScope API error: {e.response.status_code} - {e.response.text}")
             raise
         except Exception as e:
-            logger.error(f"Failed to call Cohere Rerank API: {e}")
+            logger.error(f"Failed to call DashScope Rerank API: {e}")
             raise
 
     async def close(self):

@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+import json
 from typing import Optional, List, Dict, Any
 import asyncpg
 
@@ -167,23 +168,43 @@ class IndexWorker:
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """
 
+                # Convert embedding list to pgvector format string
+                embedding = chunk.get('embedding')
+                embedding_str = None
+                if embedding:
+                    embedding_str = f"[{','.join(str(x) for x in embedding)}]"
+
+                # Serialize metadata to JSON for JSONB column
+                # Convert UUIDs and other non-serializable objects to strings
+                import uuid as uuid_module
+                metadata = chunk.get('metadata', {})
+                metadata_copy = {}
+                for key, value in metadata.items():
+                    if isinstance(value, uuid_module.UUID):
+                        metadata_copy[key] = str(value)
+                    elif hasattr(value, '__uuid__'):
+                        metadata_copy[key] = str(value)
+                    else:
+                        metadata_copy[key] = value
+                metadata_json = json.dumps(metadata_copy)
+
                 await conn.execute(
                     query,
                     chunk_id,
                     doc['id'],
                     doc['tenant_id'],
                     chunk['content'],
-                    chunk['embedding'],
+                    embedding_str,
                     chunk['metadata'].get('chunk_index', 0),
                     chunk['metadata'].get('token_count'),
-                    chunk['metadata'],
+                    metadata_json,
                     doc.get('version', 1)
                 )
 
             logger.info(f"Saved {len(chunks)} chunks for document {doc['id']}")
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def _soft_delete_old_chunks(self, old_doc_id: str):
         """
@@ -203,7 +224,7 @@ class IndexWorker:
             logger.info(f"Soft deleted chunks for old document {old_doc_id}")
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def _delete_chunks(self, doc_id: str):
         """
@@ -219,7 +240,7 @@ class IndexWorker:
             logger.info(f"Deleted chunks for document {doc_id}")
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def _get_document(
         self,
@@ -253,7 +274,7 @@ class IndexWorker:
             return dict(row)
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def _get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -276,7 +297,7 @@ class IndexWorker:
             return dict(row)
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def _mark_completed(
         self,
@@ -296,14 +317,14 @@ class IndexWorker:
         try:
             query = """
                 UPDATE rag_index_queue
-                SET status = $1, error_message = $2, updated_at = NOW()
+                SET status = $1, error_message = $2, completed_at = NOW()
                 WHERE id = $3
             """
             await conn.execute(query, status, error_message, task_id)
             logger.debug(f"Marked task {task_id} as {status}")
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def run_worker(
         self,
@@ -410,7 +431,7 @@ class IndexWorker:
             return [dict(row) for row in rows]
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def _get_connection(self) -> asyncpg.Connection:
         """Get database connection."""
@@ -422,10 +443,10 @@ class IndexWorker:
 
         return await self.pool.acquire()
 
-    def _release_connection(self, conn: asyncpg.Connection):
+    async def _release_connection(self, conn: asyncpg.Connection):
         """Release connection back to pool."""
         if self.pool and conn != self._conn:
-            self.pool.release(conn)
+            await self.pool.release(conn)
 
     async def __aenter__(self):
         """Async context manager entry."""
