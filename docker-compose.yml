@@ -19,6 +19,7 @@ services:
       - "8999:8000"
     volumes:
       - ./frontend:/app/frontend
+      - ./i3d_agent:/app/i3d_agent
     environment:
       # Database
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/i3d_agent
