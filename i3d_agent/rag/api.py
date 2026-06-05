@@ -11,6 +11,7 @@ from i3d_agent.rag.models import (
 )
 from i3d_agent.rag.document_manager import DocumentManager
 from i3d_agent.rag.controller import AgenticRAGController
+from i3d_agent.rag.retrieval import RetrievalEngine
 from i3d_agent.rag.monitor import MonitorService
 from i3d_agent.rag.index_worker import IndexWorker
 from i3d_agent.utils.logger import get_logger

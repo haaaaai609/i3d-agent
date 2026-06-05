@@ -4,9 +4,8 @@ from typing import Any, Dict, Optional
 import asyncpg
 
 from i3d_agent.agents.base import AgentConfig, BaseAgent
+from i3d_agent.rag.controller import AgenticRAGController
 from i3d_agent.rag.retrieval import RetrievalEngine
-from i3d_agent.rag.rerank import RerankService
-from i3d_agent.rag.models import Chunk
 from i3d_agent.llm import get_llm_client, Message
 from i3d_agent.utils.logger import get_logger
 
@@ -14,7 +13,11 @@ logger = get_logger(__name__)
 
 
 class RAGAgent(BaseAgent):
-    """RAG agent for technical document Q&A with full retrieval capabilities."""
+    """RAG agent for technical document Q&A with full retrieval capabilities.
+
+    This agent wraps AgenticRAGController for advanced retrieval capabilities
+    and handles answer generation using LLM.
+    """
 
     def __init__(self, config: Optional[AgentConfig] = None, pool: Optional[asyncpg.Pool] = None):
         if config is None:
@@ -37,16 +40,16 @@ class RAGAgent(BaseAgent):
 
         super().__init__(config=config, tools=tools)
 
-        # Initialize RAG components
-        self.retrieval_engine = RetrievalEngine(pool=pool)
-        self.rerank_service = RerankService()
+        # Initialize AgenticRAGController with retrieval engine
+        retrieval_engine = RetrievalEngine(pool=pool)
+        self.controller = AgenticRAGController(retrieval_engine=retrieval_engine)
 
     async def answer(
         self,
         question: str,
         tenant_id: Optional[str] = None,
         top_k: int = 5,
-        enable_rerank: bool = True,
+        enable_multi_step: bool = False,
     ) -> Dict[str, Any]:
         """
         回答技术问题
@@ -55,7 +58,7 @@ class RAGAgent(BaseAgent):
             question: 问题
             tenant_id: 租户 ID
             top_k: 检索文档数
-            enable_rerank: 是否启用重排序
+            enable_multi_step: 是否启用多步推理（质量评估+查询重写）
 
         Returns:
             答案响应
@@ -70,20 +73,27 @@ class RAGAgent(BaseAgent):
             }
 
         try:
-            # Generate query vector
-            from i3d_agent.rag.embedding import EmbeddingService
-            embedding_service = EmbeddingService()
-            query_vector = await embedding_service.embed_text(question)
+            # Use AgenticRAGController for retrieval
+            if enable_multi_step:
+                result = await self.controller.retrieve_with_multi_step(
+                    query=question,
+                    tenant_id=tenant_id or "default",
+                    top_k=top_k,
+                    enable_expansion=True,
+                    enable_hyde=True,
+                    enable_rerank=True
+                )
+            else:
+                result = await self.controller.retrieve(
+                    query=question,
+                    tenant_id=tenant_id or "default",
+                    top_k=top_k,
+                    enable_expansion=True,
+                    enable_hyde=True,
+                    enable_rerank=True
+                )
 
-            # Execute retrieval
-            search_type = self.retrieval_engine.classify_query(question)
-            results = await self.retrieval_engine.hybrid_retrieval(
-                query=question,
-                query_vector=query_vector,
-                tenant_id=tenant_id or "default",
-                top_k=top_k * 2,  # Get more results for reranking
-                search_type=search_type
-            )
+            results = result.results
 
             if not results:
                 return {
@@ -93,18 +103,10 @@ class RAGAgent(BaseAgent):
                     "status": "no_results"
                 }
 
-            # Rerank
-            if enable_rerank:
-                results = await self.rerank_service.rerank(
-                    query=question,
-                    chunks=results,
-                    top_k=top_k
-                )
-
-            # Build context
+            # Build context from retrieved results
             context = self._build_context(results)
 
-            # Generate answer
+            # Generate answer using LLM
             answer = await self._generate_answer(question, context)
 
             # Extract sources
@@ -125,8 +127,10 @@ class RAGAgent(BaseAgent):
                 "status": "success",
                 "metadata": {
                     "num_retrieved": len(results),
-                    "search_type": search_type,
-                    "tenant_id": tenant_id
+                    "iterations": result.iterations,
+                    "tenant_id": tenant_id,
+                    "query_expansions": result.query_expansions,
+                    "hypothetical_doc": result.hypothetical_doc
                 }
             }
 
@@ -181,7 +185,12 @@ class RAGAgent(BaseAgent):
 
     async def close(self):
         """Close connections"""
-        await self.rerank_service.close()
+        # Close controller's rerank service
+        if hasattr(self.controller, 'rerank_service'):
+            await self.controller.rerank_service.close()
+        # Close embedding service
+        if hasattr(self.controller, 'embedding_service'):
+            await self.controller.embedding_service.close()
 
 
 __all__ = ["RAGAgent"]

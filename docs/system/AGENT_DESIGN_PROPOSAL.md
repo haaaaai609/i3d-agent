@@ -239,10 +239,14 @@ class SearchAgent:
 ### 3.3 RAG Agent (知识库专家)
 
 ```python
-class RAGAgent:
+class RAGAgent(BaseAgent):
     """
     知识库专家 Agent - 负责技术文档问答
-    集成 Agentic RAG 能力：查询扩展、HyDE、重排序、多步推理
+    
+    架构重构 (2026-06-05):
+    - RAGAgent 现在是 AgenticRAGController 的包装器
+    - 职责划分：AgenticRAGController 负责检索，RAGAgent 负责答案生成
+    - 消除了冗余：不再直接管理 RetrievalEngine 和 RerankService
     """
 
     role = "I3D 技术文档专家"
@@ -254,7 +258,7 @@ class RAGAgent:
     - 部署和运维指南
     - 故障排查和最佳实践
     
-    你具备先进的检索能力：
+    你具备先进的检索能力（通过 AgenticRAGController）：
     - 查询扩展：生成多种查询表述提高召回率
     - HyDE：假设文档生成，用假设答案检索
     - 混合检索：向量检索 + BM25 全文检索
@@ -274,29 +278,28 @@ class RAGAgent:
         "api": "API 文档（端点级切分）"
     }
 
-    # Agentic RAG 能力
+    # Agentic RAG 能力（由 AgenticRAGController 提供）
     agentic_capabilities = {
         "query_expansion": "生成 3-5 种查询变体",
         "hyde": "假设文档生成与检索",
         "hybrid_retrieval": "向量 + BM25 混合检索",
-        "reranking": "重排序精排（Cohere/本地）",
-        "multi_step": "多步推理迭代检索",
+        "reranking": "重排序精排（DashScope/Cohere）",
+        "multi_step": "多步推理迭代检索（质量评估+查询重写）",
         "deduplication": "去重合并检索结果"
     }
 
-    # 工具（增强版）
+    # 工具
     tools = [
         retrieve_documents,
         search_api_reference,
         get_deployment_guide,
         find_troubleshooting_steps,
-        # 新增 Agentic RAG 工具
-        expand_query,
-        generate_hyde_document,
-        hybrid_retrieve,
-        rerank_results,
-        assess_retrieval_quality
     ]
+    
+    # 内部组件（重构后）
+    # - controller: AgenticRAGController 实例
+    #   负责所有检索相关逻辑（查询扩展、HyDE、混合检索、重排序、多步推理）
+    # - _generate_answer(): 使用 LLM 生成最终答案
 ```
 
 ### 3.4 Process Agent (处理专家)
@@ -1153,29 +1156,57 @@ i3d_knowledge_base/
 | Markdown | 标题层级切分 | 600-1000 tokens | 100 | 保留标题层级 |
 | PDF 文档 | 页面 + 段落 | 视内容而定 | 100 | OCR 后处理 |
 
-### 6.3 RAG 模块架构
+### 6.3 RAG 模块架构（重构后）
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        RAG 模块                                  │
-│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐           │
-│  │ Document    │   │  Embedding  │   │  Retrieval  │           │
-│  │ Processor  │──→│   Service   │──→│   Engine    │           │
-│  └─────────────┘   └─────────────┘   └──────┬──────┘           │
-│                                             │                    │
-│  ┌─────────────────────────────────────────┴────────┐          │
-│  │              Agentic RAG Controller               │          │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐│          │
-│  │  │ Query   │ │  HyDE   │ │Rerank   │ │ Multi  ││          │
-│  │  │ Rewrite │ │         │ │         │ │ Step   ││          │
-│  │  └─────────┘ └─────────┘ └─────────┘ └────────┘│          │
-│  └──────────────────────────────────────────────────┘          │
-│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐           │
-│  │  Document   │   │   Version   │   │  Monitor    │           │
-│  │   Manager   │   │  Control    │   │   Service   │           │
-│  └─────────────┘   └─────────────┘   └─────────────┘           │
+│                        RAG 模块架构                              │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                    RAG Agent (Layer 1)                    │   │
+│  │  ┌──────────────────────────────────────────────────────┐ │   │
+│  │  │  answer()                                            │ │   │
+│  │  │    ├─> controller.retrieve()  (委托检索)             │ │   │
+│  │  │    ├─> _build_context()       (构建上下文)           │ │   │
+│  │  │    └─> _generate_answer()     (LLM 答案生成)         │ │   │
+│  │  └──────────────────────────────────────────────────────┘ │   │
+│  └────────────────────────────┬─────────────────────────────┘   │
+│                               │                                  │
+│                               ▼                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │           AgenticRAGController (Layer 2)                  │   │
+│  │  ┌──────────────────────────────────────────────────────┐ │   │
+│  │  │  retrieve() / retrieve_with_multi_step()             │ │   │
+│  │  │    ├─> QueryExpansionService.expand_query()          │ │   │
+│  │  │    ├─> HyDEService.generate_hypothetical()           │ │   │
+│  │  │    ├─> RetrievalEngine.hybrid_retrieval()             │ │   │
+│  │  │    │   ├─> vector_search()  (HNSW + pgvector)         │ │   │
+│  │  │    │   └─> bm25_search()    (PostgreSQL tsvector)     │ │   │
+│  │  │    ├─> _deduplicate_and_merge()                       │ │   │
+│  │  │    ├─> RerankService.rerank()                         │ │   │
+│  │  │    └─> _assess_quality() / _rewrite_query()           │ │   │
+│  │  └──────────────────────────────────────────────────────┘ │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                    其他 RAG 组件                          │   │
+│  │  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐     │   │
+│  │  │ Document    │   │   Version   │   │  Monitor    │     │   │
+│  │  │   Manager   │   │  Control    │   │   Service   │     │   │
+│  │  └─────────────┘   └─────────────┘   └─────────────┘     │   │
+│  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**职责划分**：
+
+| 组件 | 职责 | LLM 用途 |
+|------|------|----------|
+| **RAGAgent** | 答案生成 | 生成最终答案 |
+| **AgenticRAGController** | 检索增强 | 查询扩展、HyDE、查询重写 |
+| **QueryExpansionService** | 查询扩展 | 生成查询变体 |
+| **HyDEService** | 假设生成 | 生成假设文档 |
+| **RerankService** | 重排序 | 外部 Rerank API |
 
 ### 6.4 增量索引设计
 
@@ -1370,14 +1401,16 @@ def create_agent_graph():
         """RAG 节点"""
         rag_agent = RAGAgent()
 
-        # 检索和生成
+        # 检索和生成（内部使用 AgenticRAGController）
         response = rag_agent.answer(
             question=state["rag_query"],
-            tenant_id=state["tenant_id"]
+            tenant_id=state["tenant_id"],
+            enable_multi_step=state.get("enable_multi_step", False)
         )
 
         state["rag_answer"] = response["answer"]
         state["sources"] = response["sources"]
+        state["rag_metadata"] = response.get("metadata", {})
 
         return state
 

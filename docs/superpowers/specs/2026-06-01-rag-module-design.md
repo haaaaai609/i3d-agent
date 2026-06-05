@@ -1,8 +1,9 @@
 # I3D Agent System - RAG 模块设计文档
 
-> **文档版本**: 1.0
+> **文档版本**: 1.1
 > **创建日期**: 2026-06-01
-> **状态**: 设计完成，待实现
+> **更新日期**: 2026-06-05
+> **状态**: 已实现，架构重构完成
 
 ---
 
@@ -54,23 +55,41 @@ I3D Agent System 是一个智能多代理系统，用于 3D CAD 模型搜索、�
                                │ 调用
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                        RAG 模块                                  │
-│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐           │
-│  │ Document    │   │  Embedding  │   │  Retrieval  │           │
-│  │ Processor  │──→│   Service   │──→│   Engine    │           │
-│  └─────────────┘   └─────────────┘   └──────┬──────┘           │
-│                                             │                    │
-│  ┌─────────────────────────────────────────┴────────┐          │
-│  │              Agentic RAG Controller               │          │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐│          │
-│  │  │ Query   │ │  HyDE   │ │Rerank   │ │ Multi  ││          │
-│  │  │ Rewrite │ │         │ │         │ │ Step   ││          │
-│  │  └─────────┘ └─────────┘ └─────────┘ └────────┘│          │
-│  └──────────────────────────────────────────────────┘          │
-│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐           │
-│  │  Document   │   │   Version   │   │  Monitor    │           │
-│  │   Manager   │   │  Control    │   │   Service   │           │
-│  └─────────────┘   └─────────────┘   └─────────────┘           │
+│                        RAG 模块（重构后）                        │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │              RAG Agent (i3d_agent/agents/rag.py)        │   │
+│  │  ┌──────────────────────────────────────────────────────┐ │   │
+│  │  │  answer()                                            │ │   │
+│  │  │    ├─> controller.retrieve()  ← 委托给 Controller     │ │   │
+│  │  │    ├─> _build_context()                             │ │   │
+│  │  │    └─> _generate_answer()  ← LLM 生成答案          │ │   │
+│  │  └──────────────────────────────────────────────────────┘ │   │
+│  └────────────────────────────┬─────────────────────────────┘   │
+│                               │                                  │
+│                               ▼                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │     AgenticRAGController (i3d_agent/rag/controller.py)  │   │
+│  │  ┌──────────────────────────────────────────────────────┐ │   │
+│  │  │  retrieve() / retrieve_with_multi_step()           │ │   │
+│  │  │    ├─> QueryExpansionService (查询扩展)              │ │   │
+│  │  │    ├─> HyDEService (假设文档生成)                    │ │   │
+│  │  │    ├─> RetrievalEngine.hybrid_retrieval()           │ │   │
+│  │  │    │   ├─> vector_search()  ← HNSW + pgvector       │ │   │
+│  │  │    │   └─> bm25_search()    ← PostgreSQL tsvector   │ │   │
+│  │  │    ├─> _deduplicate_and_merge()                     │ │   │
+│  │  │    ├─> RerankService.rerank()                        │ │   │
+│  │  │    └─> _assess_quality() / _rewrite_query()          │ │   │
+│  │  └──────────────────────────────────────────────────────┘ │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                    其他 RAG 组件                          │   │
+│  │  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐     │   │
+│  │  │ Document    │   │   Version   │   │  Monitor    │     │   │
+│  │  │   Manager   │   │  Control    │   │   Service   │     │   │
+│  │  └─────────────┘   └─────────────┘   └─────────────┘     │   │
+│  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
                                │
                                │ 存储
@@ -88,16 +107,41 @@ I3D Agent System 是一个智能多代理系统，用于 3D CAD 模型搜索、�
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### 2.1.1 重构说明 (2026-06-05)
+
+**重构前问题**：
+- RAGAgent 直接管理 RetrievalEngine 和 RerankService
+- 与 AgenticRAGController 功能重叠，代码冗余
+- Workflow 路径和 API 路径使用不同组件，架构不一致
+
+**重构后架构**：
+- RAGAgent 简化为 AgenticRAGController 的包装器
+- 职责明确划分：
+  - **AgenticRAGController**：负责所有检索逻辑（查询扩展、HyDE、混合检索、重排序、多步推理）
+  - **RAGAgent**：负责答案生成（使用 LLM）
+- 统一架构：API 层和 Workflow 层都使用 AgenticRAGController 进行检索
+
+**重构效果**：
+| 方面 | 重构前 | 重构后 |
+|------|--------|--------|
+| 代码行数 (RAGAgent) | ~150 行 | ~70 行 |
+| 直接依赖 | RetrievalEngine, RerankService | AgenticRAGController |
+| 高级能力 | 未启用 | 已启用（查询扩展、HyDE、多步推理） |
+| 架构一致性 | 不一致 | 一致 |
+
 ### 2.2 组件职责
 
-| 组件 | 职责 |
-|------|------|
-| Document Processor | 文档解析、切分、元数据提取 |
-| Embedding Service | 生成向量 embedding，支持批量 |
-| Retrieval Engine | 混合检索（向量 + BM25） |
-| Agentic RAG Controller | 查询扩展、HyDE、重排、多步推理 |
-| Document Manager | CRUD 操作、版本管理 |
-| Monitor Service | 性能监控、质量追踪 |
+| 组件 | 文件位置 | 职责 | LLM 用途 |
+|------|----------|------|----------|
+| **RAGAgent** | `agents/rag.py` | 答案生成，调用 AgenticRAGController | 生成最终答案 |
+| **AgenticRAGController** | `rag/controller.py` | 检索编排，协调所有检索组件 | 查询重写 |
+| **QueryExpansionService** | `rag/query_expansion.py` | 查询扩展，生成多种表述 | 生成查询变体 |
+| **HyDEService** | `rag/hyde.py` | 假设文档生成 | 生成假设文档 |
+| **RetrievalEngine** | `rag/retrieval.py` | 混合检索（向量 + BM25） | - |
+| **RerankService** | `rag/rerank.py` | 重排序精排 | 外部 Rerank API |
+| **EmbeddingService** | `rag/embedding.py` | 向量嵌入生成 | 外部 Embedding API |
+| **DocumentManager** | `rag/document_manager.py` | CRUD 操作、版本管理 | - |
+| **MonitorService** | `rag/monitor.py` | 性能监控、质量追踪 | - |
 
 ### 2.3 项目结构
 
@@ -126,6 +170,112 @@ i3d_agent/
 │
 └── config/
     └── settings.py               # 配置
+```
+
+---
+
+## 2.3 架构重构详解 (2026-06-05)
+
+### 2.3.1 重构动机
+
+**冗余问题**：
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        重构前（存在冗余）                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  RAGAgent (agents/rag.py)                                       │
+│  ├─ self.retrieval_engine = RetrievalEngine()                   │
+│  ├─ self.rerank_service = RerankService()                       │
+│  └─ answer():                                                   │
+│      ├─> hybrid_retrieval()                                     │
+│      ├─> rerank()                                               │
+│      └─> generate_answer()                                      │
+│                                                                  │
+│  AgenticRAGController (rag/controller.py)                        │
+│  ├─ self.retrieval_engine = RetrievalEngine()                   │
+│  ├─ self.rerank_service = RerankService()                       │
+│  └─ retrieve():                                                 │
+│      ├─> query_expansion                                        │
+│      ├─> hyde                                                  │
+│      ├─> hybrid_retrieval()                                     │
+│      ├─> rerank()                                               │
+│      └─> quality_assessment                                     │
+│                                                                  │
+│  问题：两者都初始化 RetrievalEngine 和 RerankService，功能重叠    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 2.3.2 重构后架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        重构后（职责清晰）                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  RAGAgent (agents/rag.py)                                       │
+│  ├─ self.controller = AgenticRAGController(...)                  │
+│  └─ answer():                                                   │
+│      ├─> controller.retrieve()  ← 委托检索                       │
+│      ├─> _build_context()                                       │
+│      └─> _generate_answer()  ← 专注答案生成                      │
+│                                                                  │
+│  AgenticRAGController (rag/controller.py)                        │
+│  ├─ self.retrieval_engine = RetrievalEngine()                   │
+│  ├─ self.rerank_service = RerankService()                       │
+│  ├─ self.query_expansion = QueryExpansionService()              │
+│  ├─ self.hyde_service = HyDEService()                           │
+│  └─ retrieve():                                                 │
+│      ├─> query_expansion  ← 新增能力                            │
+│      ├─> hyde            ← 新增能力                            │
+│      ├─> hybrid_retrieval                                       │
+│      ├─> rerank                                                 │
+│      └─> quality_assessment  ← 新增能力                        │
+│                                                                  │
+│  优势：                                                          │
+│  - 消除代码冗余                                                 │
+│  - 职责清晰分离                                                  │
+│  - RAGAgent 自动获得高级能力                                      │
+│  - 架构统一（API 和 Workflow 都用同一套）                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 2.3.3 重构代码对比
+
+**重构前 RAGAgent.answer()**：
+```python
+async def answer(self, question, tenant_id=None, top_k=5, enable_rerank=True):
+    # 生成向量
+    embedding_service = EmbeddingService()
+    query_vector = await embedding_service.embed_text(question)
+
+    # 检索
+    search_type = self.retrieval_engine.classify_query(question)
+    results = await self.retrieval_engine.hybrid_retrieval(...)
+
+    # 重排序
+    if enable_rerank:
+        results = await self.rerank_service.rerank(...)
+
+    # 生成答案
+    context = self._build_context(results)
+    answer = await self._generate_answer(question, context)
+```
+
+**重构后 RAGAgent.answer()**：
+```python
+async def answer(self, question, tenant_id=None, top_k=5, enable_multi_step=False):
+    # 使用 Controller 检索
+    if enable_multi_step:
+        result = await self.controller.retrieve_with_multi_step(...)
+    else:
+        result = await self.controller.retrieve(...)
+
+    results = result.results
+
+    # 生成答案
+    context = self._build_context(results)
+    answer = await self._generate_answer(question, context)
 ```
 
 ---
