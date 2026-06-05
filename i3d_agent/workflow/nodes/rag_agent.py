@@ -1,12 +1,32 @@
 """RAG agent node for the I3D Agent workflow."""
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import asyncpg
 
 from i3d_agent.agents.rag import RAGAgent
 from i3d_agent.agents.base import NeedsClarificationError
 from i3d_agent.workflow.state import WorkflowState, SubTask, ClarificationRequest, ErrorInfo
 from i3d_agent.workflow.utils import log_agent_execution, log_task_status, log_error_handling
 from i3d_agent.utils.logger import get_logger
+from i3d_agent.config.settings import get_settings
+
+
+# ========== 全局数据库池 ==========
+
+_db_pool: Optional[asyncpg.Pool] = None
+
+
+async def get_db_pool() -> asyncpg.Pool:
+    """获取或创建数据库连接池"""
+    global _db_pool
+    if _db_pool is None:
+        settings = get_settings()
+        _db_pool = await asyncpg.create_pool(
+            settings.get_database_url(async_driver=True),
+            min_size=2,
+            max_size=10
+        )
+    return _db_pool
 
 logger = get_logger(__name__)
 
@@ -30,7 +50,8 @@ async def rag_agent_node(state: WorkflowState) -> WorkflowState:
     log_task_status(request_id, current_task, "started")
 
     try:
-        agent = RAGAgent()
+        pool = await get_db_pool()
+        agent = RAGAgent(pool=pool)
         input_data = current_task.input_data
 
         log_agent_execution(

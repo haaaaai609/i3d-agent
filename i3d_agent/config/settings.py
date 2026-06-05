@@ -67,6 +67,14 @@ class Settings(BaseSettings):
         default="claude-3-5-sonnet-20241022",
         description="Default LLM model"
     )
+    EMBEDDING_PROVIDER: str = Field(
+        default="openai",
+        description="Embedding service provider (openai, dashscope, local)"
+    )
+    EMBEDDING_BASE_URL: str = Field(
+        default="https://api.openai.com/v1",
+        description="Embedding API base URL"
+    )
     EMBEDDING_MODEL: str = Field(
         default="text-embedding-3-small",
         description="Embedding model for vector search"
@@ -198,11 +206,14 @@ class Settings(BaseSettings):
         return v
 
     def get_database_url(self, async_driver: bool = False) -> str:
-        """Get database URL with optional async driver."""
+        """Get database URL for sync or async drivers.
+
+        For asyncpg (async_driver=True): uses postgresql://
+        For psycopg2 (async_driver=False): keeps original protocol
+        """
         if async_driver:
-            return self.DATABASE_URL.replace(
-                "postgresql+psycopg2://", "postgresql+asyncpg://"
-            ).replace("postgresql://", "postgresql+asyncpg://")
+            # asyncpg only supports postgresql:// or postgres://, not postgresql+asyncpg://
+            return self.DATABASE_URL.replace("postgresql+psycopg2://", "postgresql://")
         return self.DATABASE_URL
 
 

@@ -4,8 +4,31 @@ from typing import Optional, List, Dict, Any, Tuple
 import re
 import asyncpg
 import numpy as np
+import json
 
 from i3d_agent.rag.models import Chunk
+
+
+def _parse_vector(vec: Any) -> List[float]:
+    """
+    Safely parse a vector from database response.
+
+    Handles both string format "[0.1,0.2,...]" and list format.
+    """
+    if vec is None:
+        return []
+    if isinstance(vec, list):
+        return [float(x) for x in vec]
+    if isinstance(vec, str):
+        # Remove brackets and split by comma
+        vec = vec.strip()
+        if vec.startswith('[') and vec.endswith(']'):
+            vec = vec[1:-1]
+        if not vec:
+            return []
+        return [float(x.strip()) for x in vec.split(',') if x.strip()]
+    # Fallback: try to convert to list
+    return list(vec)
 
 
 class RetrievalEngine:
@@ -47,10 +70,10 @@ class RetrievalEngine:
             return await self.pool.acquire()
         raise RuntimeError("No database connection available")
 
-    def _release_connection(self, conn: asyncpg.Connection):
+    async def _release_connection(self, conn: asyncpg.Connection):
         """Release connection back to pool."""
         if self.pool and conn != self._conn:
-            self.pool.release(conn)
+            await self.pool.release(conn)
 
     def classify_query(self, query: str) -> str:
         """
@@ -108,6 +131,9 @@ class RetrievalEngine:
         """
         conn = await self._get_connection()
         try:
+            # Convert vector list to pgvector format string: [0.1,0.2,0.3,...]
+            vector_str = f"[{','.join(str(x) for x in query_vector)}]"
+
             query = """
                 SELECT
                     id, doc_id, tenant_id, content, embedding,
@@ -121,7 +147,7 @@ class RetrievalEngine:
                 LIMIT $3
             """
 
-            params = [query_vector, tenant_id, top_k]
+            params = [vector_str, tenant_id, top_k]
 
             if threshold is not None:
                 query = """
@@ -143,15 +169,25 @@ class RetrievalEngine:
 
             results = []
             for row in rows:
+                # Safely parse embedding from pgvector
+                embedding = _parse_vector(row.get('embedding'))
+
+                # Safely handle metadata (already dict from JSONB)
+                metadata = row.get('metadata')
+                if metadata is None:
+                    metadata = {}
+                elif not isinstance(metadata, dict):
+                    metadata = {}
+
                 chunk = Chunk(
                     id=str(row['id']),
                     doc_id=str(row['doc_id']),
                     tenant_id=row['tenant_id'],
                     content=row['content'],
-                    embedding=list(row['embedding']) if row['embedding'] else [],
+                    embedding=embedding,
                     chunk_index=row['chunk_index'],
                     token_count=row.get('token_count'),
-                    metadata=dict(row.get('metadata', {})),
+                    metadata=metadata,
                     doc_version=row['doc_version'],
                     vector_score=float(row['score']),
                     bm25_score=None,
@@ -162,7 +198,7 @@ class RetrievalEngine:
             return results
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def bm25_search(
         self,
@@ -221,15 +257,25 @@ class RetrievalEngine:
 
             results = []
             for row in rows:
+                # Safely parse embedding from pgvector
+                embedding = _parse_vector(row.get('embedding'))
+
+                # Safely handle metadata (already dict from JSONB)
+                metadata = row.get('metadata')
+                if metadata is None:
+                    metadata = {}
+                elif not isinstance(metadata, dict):
+                    metadata = {}
+
                 chunk = Chunk(
                     id=str(row['id']),
                     doc_id=str(row['doc_id']),
                     tenant_id=row['tenant_id'],
                     content=row['content'],
-                    embedding=list(row['embedding']) if row['embedding'] else [],
+                    embedding=embedding,
                     chunk_index=row['chunk_index'],
                     token_count=row.get('token_count'),
-                    metadata=dict(row.get('metadata', {})),
+                    metadata=metadata,
                     doc_version=row['doc_version'],
                     vector_score=None,
                     bm25_score=float(row['score']),
@@ -240,7 +286,7 @@ class RetrievalEngine:
             return results
 
         finally:
-            self._release_connection(conn)
+            await self._release_connection(conn)
 
     async def hybrid_retrieval(
         self,

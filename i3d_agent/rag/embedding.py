@@ -145,20 +145,120 @@ class EmbeddingService:
             client = await self._get_client()
 
             # 根据配置选择 API
-            if self.settings.DASHSCOPE_API_KEY and self.settings.DASHSCOPE_API_KEY != "":
-                logger.debug(f"Using DashScope API for {len(texts)} texts")
-                return await self._call_dashscope(client, texts)
-            elif self.settings.OPENAI_API_KEY and self.settings.OPENAI_API_KEY != "":
-                logger.debug(f"Using OpenAI API for {len(texts)} texts")
-                return await self._call_openai(client, texts)
+            if self.settings.EMBEDDING_PROVIDER == "ollama":
+                logger.debug(f"Using Ollama API for {len(texts)} texts")
+                return await self._call_ollama(client, texts)
+            elif self.settings.EMBEDDING_PROVIDER == "local":
+                logger.debug(f"Using local embedding API for {len(texts)} texts")
+                return await self._call_local(client, texts)
+            elif self.settings.EMBEDDING_PROVIDER == "dashscope":
+                if self.settings.DASHSCOPE_API_KEY and self.settings.DASHSCOPE_API_KEY != "":
+                    logger.debug(f"Using DashScope API for {len(texts)} texts")
+                    return await self._call_dashscope(client, texts)
+                else:
+                    raise ValueError("EMBEDDING_PROVIDER=dashscope but DASHSCOPE_API_KEY is not set")
+            elif self.settings.EMBEDDING_PROVIDER == "openai":
+                if self.settings.OPENAI_API_KEY and self.settings.OPENAI_API_KEY != "":
+                    logger.debug(f"Using OpenAI API for {len(texts)} texts")
+                    return await self._call_openai(client, texts)
+                else:
+                    raise ValueError("EMBEDDING_PROVIDER=openai but OPENAI_API_KEY is not set")
             else:
                 raise ValueError(
-                    "No API key configured. Please set DASHSCOPE_API_KEY or OPENAI_API_KEY"
+                    f"Unknown EMBEDDING_PROVIDER: {self.settings.EMBEDDING_PROVIDER}. "
+                    "Supported: local, dashscope, openai"
                 )
 
         except Exception as e:
             logger.error(f"Failed to call embedding API: {e}")
             raise
+
+    async def _call_local(
+        self, client: httpx.AsyncClient, texts: List[str]
+    ) -> List[List[float]]:
+        """调用本地 Embedding API (OpenAI 兼容格式)
+
+        Args:
+            client: HTTP 客户端
+            texts: 要生成 embedding 的文本列表
+
+        Returns:
+            embedding 向量列表
+        """
+        url = f"{self.settings.EMBEDDING_BASE_URL}/embeddings"
+
+        headers = {
+            "Content-Type": "application/json",
+        }
+
+        data = {
+            "model": self.settings.EMBEDDING_MODEL,
+            "input": texts,
+        }
+
+        try:
+            response = await client.post(url, headers=headers, json=data)
+            response.raise_for_status()
+
+            result = response.json()
+
+            # OpenAI 兼容格式: {"data": [{"embedding": [...]}]}
+            embeddings = result.get("data", [])
+            return [item["embedding"] for item in embeddings]
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Local embedding API error: {e.response.status_code} - {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to call local embedding API: {e}")
+            raise
+
+    async def _call_ollama(
+        self, client: httpx.AsyncClient, texts: List[str]
+    ) -> List[List[float]]:
+        """调用 Ollama Embedding API
+
+        Args:
+            client: HTTP 客户端
+            texts: 要生成 embedding 的文本列表
+
+        Returns:
+            embedding 向量列表
+        """
+        url = f"{self.settings.EMBEDDING_BASE_URL}/api/embed"
+
+        headers = {
+            "Content-Type": "application/json",
+        }
+
+        results = []
+        # Ollama API 一次只处理一个文本
+        for text in texts:
+            data = {
+                "model": self.settings.EMBEDDING_MODEL,
+                "prompt": text,
+            }
+
+            try:
+                response = await client.post(url, headers=headers, json=data)
+                response.raise_for_status()
+
+                result = response.json()
+                # Ollama 响应格式: {"embedding": [...]}
+                if "embedding" in result:
+                    results.append(result["embedding"])
+                else:
+                    logger.error(f"Unexpected Ollama response: {result}")
+                    raise ValueError("No embedding in Ollama response")
+
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Ollama API error: {e.response.status_code} - {e.response.text}")
+                raise
+            except Exception as e:
+                logger.error(f"Failed to call Ollama API: {e}")
+                raise
+
+        return results
 
     async def _call_dashscope(
         self, client: httpx.AsyncClient, texts: List[str]
@@ -220,7 +320,7 @@ class EmbeddingService:
         Returns:
             embedding 向量列表
         """
-        url = "https://api.openai.com/v1/embeddings"
+        url = f"{self.settings.EMBEDDING_BASE_URL}/embeddings"
 
         headers = {
             "Authorization": f"Bearer {self.settings.OPENAI_API_KEY}",

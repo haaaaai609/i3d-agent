@@ -1,6 +1,7 @@
 """RAG agent for technical document Q&A with full RAG capabilities."""
 
 from typing import Any, Dict, Optional
+import asyncpg
 
 from i3d_agent.agents.base import AgentConfig, BaseAgent
 from i3d_agent.rag.retrieval import RetrievalEngine
@@ -15,7 +16,7 @@ logger = get_logger(__name__)
 class RAGAgent(BaseAgent):
     """RAG agent for technical document Q&A with full retrieval capabilities."""
 
-    def __init__(self, config: Optional[AgentConfig] = None):
+    def __init__(self, config: Optional[AgentConfig] = None, pool: Optional[asyncpg.Pool] = None):
         if config is None:
             config = AgentConfig(
                 name="rag",
@@ -37,7 +38,7 @@ class RAGAgent(BaseAgent):
         super().__init__(config=config, tools=tools)
 
         # Initialize RAG components
-        self.retrieval_engine = RetrievalEngine()
+        self.retrieval_engine = RetrievalEngine(pool=pool)
         self.rerank_service = RerankService()
 
     async def answer(

@@ -46,9 +46,9 @@ async def get_document_manager(pool: asyncpg.Pool = Depends(get_db_pool)) -> Doc
     return DocumentManager(pool=pool)
 
 
-async def get_rag_controller() -> AgenticRAGController:
-    """获取 RAG 控制器实例"""
-    return AgenticRAGController()
+async def get_rag_controller(pool: asyncpg.Pool = Depends(get_db_pool)) -> AgenticRAGController:
+    """获取 RAG 控制器实例，注入数据库连接池"""
+    return AgenticRAGController(retrieval_engine=RetrievalEngine(pool=pool))
 
 
 async def get_monitor_service() -> MonitorService:

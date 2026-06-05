@@ -10,8 +10,28 @@ These tools now integrate with the full RAG module.
 
 from typing import Any, Dict, List, Optional
 import asyncio
+import asyncpg
 
 from langchain_core.tools import tool
+from i3d_agent.config.settings import get_settings
+
+
+# ========== 全局数据库池 ==========
+
+_db_pool: Optional[asyncpg.Pool] = None
+
+
+async def get_db_pool() -> asyncpg.Pool:
+    """获取或创建数据库连接池"""
+    global _db_pool
+    if _db_pool is None:
+        settings = get_settings()
+        _db_pool = await asyncpg.create_pool(
+            settings.get_database_url(async_driver=True),
+            min_size=2,
+            max_size=10
+        )
+    return _db_pool
 
 
 @tool
@@ -62,9 +82,11 @@ def retrieve_documents(
 
     async def _retrieve():
         from i3d_agent.rag.controller import AgenticRAGController
+        from i3d_agent.rag.retrieval import RetrievalEngine
         from i3d_agent.rag.embedding import EmbeddingService
 
-        controller = AgenticRAGController()
+        pool = await get_db_pool()
+        controller = AgenticRAGController(retrieval_engine=RetrievalEngine(pool=pool))
 
         # Generate query vector
         embedding_service = EmbeddingService()
