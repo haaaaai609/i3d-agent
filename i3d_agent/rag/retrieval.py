@@ -7,6 +7,9 @@ import numpy as np
 import json
 
 from i3d_agent.rag.models import Chunk
+from i3d_agent.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def _parse_vector(vec: Any) -> List[float]:
@@ -167,6 +170,8 @@ class RetrievalEngine:
 
             rows = await conn.fetch(query, *params)
 
+            logger.info(f"Vector search returned {len(rows)} chunks (tenant: {tenant_id}, top_k: {top_k})")
+
             results = []
             for row in rows:
                 # Safely parse embedding from pgvector
@@ -255,6 +260,8 @@ class RetrievalEngine:
 
             rows = await conn.fetch(query, *params)
 
+            logger.info(f"BM25 search returned {len(rows)} chunks for query '{query[:50]}...' (tenant: {tenant_id}, top_k: {top_k})")
+
             results = []
             for row in rows:
                 # Safely parse embedding from pgvector
@@ -332,6 +339,8 @@ class RetrievalEngine:
             self.bm25_search(query, tenant_id, top_k * 2)
         )
 
+        logger.info(f"Hybrid retrieval: vector={len(vector_results)}, bm25={len(bm25_results)} results (search_type: {search_type}, alpha: {alpha}, beta: {beta})")
+
         # Create lookup for BM25 results
         bm25_lookup = {result.id: result for result in bm25_results}
 
@@ -398,7 +407,9 @@ class RetrievalEngine:
 
         # Sort by final score and return top_k
         merged_results.sort(key=lambda x: x.final_score or 0.0, reverse=True)
-        return merged_results[:top_k]
+        final_results = merged_results[:top_k]
+        logger.info(f"Hybrid retrieval merged and deduplicated to {len(final_results)} chunks (returned top_k: {top_k})")
+        return final_results
 
     def _normalize_scores(self, scores: List[float]) -> List[float]:
         """
