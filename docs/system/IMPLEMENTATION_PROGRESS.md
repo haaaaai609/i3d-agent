@@ -739,6 +739,98 @@ d035480 - feat: add base agent class
 
 ---
 
+## Phase 9.5: RAG 文档上传与批量导入计划
+
+**目标**: 为 RAG 文档库补齐文件级导入能力，在保留现有 JSON 文本创建接口的基础上，新增单文件上传接口和宿主机目录批量导入接口。导入后的文档需要可追溯原始文件来源，并支持基于 MD5 的重复过滤。
+
+**状态**: 待实现
+
+### 背景与现状
+
+- 现有 `POST /api/v1/rag/documents` 接收 JSON 文本内容，直接写入 `rag_documents.raw_content`，不处理 multipart 文件。
+- 当前 `RAG_DATA_PATH=./data/rag` 只作为配置存在，代码没有把原始文档保存到本地目录。
+- RAG worker 从数据库 `raw_content` 切分、生成 embedding、写入 `rag_chunks`，不依赖本地文件。
+- 后续前端需要单个文件上传能力，运维/初始化场景需要从宿主机目录批量导入存量文档。
+
+### 接口设计
+
+| 接口 | 用途 | 输入 | 输出 |
+|------|------|------|------|
+| `POST /api/v1/rag/documents/upload` | 单个文件上传，供前端界面使用 | `multipart/form-data`: file, tenant_id, doc_type, source_type, title?, description?, tags?, metadata? | 创建的文档信息、是否入队索引、文件 MD5 |
+| `POST /api/v1/rag/documents/batch-import` | 批量导入宿主机目录 | JSON: host_dir, tenant_id, doc_type, recursive, include_patterns, exclude_patterns, dry_run, metadata? | 扫描数量、导入数量、跳过数量、跳过原因、错误列表 |
+
+### 本地存储与路径挂载
+
+- 新增统一文件归档目录: `RAG_DOCUMENTS_PATH=./data/rag/documents`。
+- 单文件上传归档路径建议为:
+  - `./data/rag/documents/{tenant_id}/{yyyy-mm-dd}/{md5}_{safe_filename}`
+- 批量导入原始文件不直接信任容器内任意路径，要求通过 Docker Compose 显式挂载宿主机目录，例如:
+  - 宿主机: `D:\Download\yan\rag-import`
+  - 容器内只读路径: `/mnt/rag-import`
+- 批量接口只允许读取白名单挂载根目录下的路径，避免任意宿主机路径读取。
+- 批量导入后也要复制一份到 `RAG_DOCUMENTS_PATH` 的日期归档目录，数据库记录原始宿主机路径和归档路径。
+
+### 数据库字段调整
+
+建议在 `rag_documents` 增加文件来源字段:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `file_md5` | `VARCHAR(32)` | 原始文件 MD5，用于去重 |
+| `file_name` | `TEXT` | 原始文件名 |
+| `file_size` | `BIGINT` | 文件大小 |
+| `mime_type` | `TEXT` | 文件类型 |
+| `storage_path` | `TEXT` | 归档后的容器内路径 |
+| `source_path` | `TEXT` | 批量导入时的原始宿主机路径或挂载路径 |
+
+索引建议:
+
+- `CREATE INDEX idx_rag_docs_file_md5 ON rag_documents(file_md5);`
+- 业务去重建议按 `tenant_id + file_md5` 判断，避免不同租户互相影响。
+
+### 文件解析策略
+
+- 第一阶段优先支持: `.md`, `.txt`, `.json`, `.html`。
+- PDF、Word 等二进制文档可后续接入 `unstructured` 或专门解析器。
+- 解析失败时文件仍可归档，但文档状态置为 `failed`，记录 `error_message`，不进入索引或索引任务标记失败。
+
+### 去重与过滤规则
+
+批量导入需要同时处理目录内重复和数据库已存在重复:
+
+- 扫描目录时计算每个文件 MD5。
+- 同一次批量任务内，如果多个文件 MD5 相同，仅导入第一个，其余记录为 `duplicate_in_batch`。
+- 查询数据库中同租户同 MD5 的现有文档，存在则跳过，记录为 `duplicate_in_database`。
+- 支持 `include_patterns` 和 `exclude_patterns`，例如:
+  - include: `["*.md", "*.txt", "*.json"]`
+  - exclude: `["**/node_modules/**", "**/.git/**", "**/dist/**"]`
+- 支持 `dry_run=true`，只返回扫描和过滤结果，不写库、不复制文件、不创建索引任务。
+
+### 实现步骤
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| 9.5.1 | 增加上传/批量导入请求与响应模型 | 待实现 |
+| 9.5.2 | 增加文件归档服务，负责日期目录、文件名清洗、MD5、复制/保存 | 待实现 |
+| 9.5.3 | 增加文档解析服务，将文件内容转换为 `raw_content` | 待实现 |
+| 9.5.4 | 扩展 `rag_documents` 表字段和迁移脚本 | 待实现 |
+| 9.5.5 | 新增单文件上传 API | 待实现 |
+| 9.5.6 | 新增批量导入 API，支持白名单挂载目录、模式过滤、dry run | 待实现 |
+| 9.5.7 | 批量导入加入 MD5 去重逻辑，返回跳过原因明细 | 待实现 |
+| 9.5.8 | Docker Compose 增加 `./data/rag` 持久化挂载和宿主机导入目录只读挂载示例 | 待实现 |
+| 9.5.9 | 增加单元测试和 API 测试 | 待实现 |
+
+### 验收标准
+
+- 单文件上传 `.md` 后，本地 `./data/rag/documents/{tenant_id}/{date}/` 下存在归档文件。
+- 上传成功后数据库写入 `raw_content`, `file_md5`, `storage_path`，并创建索引任务。
+- 批量导入目录时，重复文件会被跳过并返回清晰原因。
+- 数据库中同租户已存在相同 MD5 文件时不会重复导入。
+- `dry_run=true` 不产生任何数据库和文件系统变更。
+- 容器只能访问明确挂载的宿主机导入目录，不能读取任意宿主机路径。
+
+---
+
 ## Phase 10: 可观测性改进 🚧
 
 **开始时间**: 2026-06-04

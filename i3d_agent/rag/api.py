@@ -1,15 +1,21 @@
 """RAG API routes."""
 
-from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException
+import json
+from io import BytesIO
+from pathlib import Path
+from typing import Optional, List, Dict
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 import asyncpg
 
 from i3d_agent.rag.models import (
     DocumentCreate, DocumentUpdate, DocumentResponse,
-    SearchRequest, AskRequest, FeedbackRequest
+    SearchRequest, AskRequest, FeedbackRequest,
+    BatchImportRequest, BatchImportResponse, ImportItemResult
 )
 from i3d_agent.rag.document_manager import DocumentManager
+from i3d_agent.rag.document_storage import DocumentStorage
 from i3d_agent.rag.controller import AgenticRAGController
 from i3d_agent.rag.retrieval import RetrievalEngine
 from i3d_agent.rag.monitor import MonitorService
@@ -47,6 +53,14 @@ async def get_document_manager(pool: asyncpg.Pool = Depends(get_db_pool)) -> Doc
     return DocumentManager(pool=pool)
 
 
+async def get_document_storage() -> DocumentStorage:
+    """Get file storage helper for RAG document imports."""
+    return DocumentStorage(
+        documents_path=settings.RAG_DOCUMENTS_PATH,
+        import_roots=settings.rag_import_roots_list
+    )
+
+
 async def get_rag_controller(pool: asyncpg.Pool = Depends(get_db_pool)) -> AgenticRAGController:
     """获取 RAG 控制器实例，注入数据库连接池"""
     return AgenticRAGController(retrieval_engine=RetrievalEngine(pool=pool))
@@ -58,6 +72,38 @@ async def get_monitor_service() -> MonitorService:
 
 
 # ========== 文档管理 API ==========
+
+def _parse_json_object(raw: Optional[str], field_name: str) -> Dict:
+    """Parse a JSON object form field."""
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{field_name} must be valid JSON") from e
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a JSON object")
+    return value
+
+
+def _parse_tags(raw: Optional[str]) -> List[str]:
+    """Parse tags from JSON array or comma-separated form field."""
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+    except json.JSONDecodeError:
+        pass
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _source_type_from_name(filename: str) -> str:
+    """Infer a source_type value from a filename."""
+    suffix = Path(filename).suffix.lower().lstrip(".")
+    return suffix or "txt"
+
 
 @router.post("/documents", response_model=DocumentResponse)
 async def create_document(
@@ -81,6 +127,164 @@ async def create_document(
     except Exception as e:
         logger.error(f"Failed to create document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documents/upload", response_model=DocumentResponse)
+async def upload_document(
+    file: UploadFile = File(...),
+    tenant_id: str = Form(...),
+    doc_type: str = Form(...),
+    source_type: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    metadata: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+    language: str = Form("zh"),
+    document_manager: DocumentManager = Depends(get_document_manager),
+    document_storage: DocumentStorage = Depends(get_document_storage)
+):
+    """Upload one source file, archive it locally, and create a RAG document."""
+    try:
+        metadata_dict = _parse_json_object(metadata, "metadata")
+        tags_list = _parse_tags(tags)
+        data = await file.read()
+        stored = document_storage.archive_upload(
+            BytesIO(data),
+            filename=file.filename or "document",
+            tenant_id=tenant_id,
+            mime_type=file.content_type
+        )
+
+        doc = await document_manager.create_document(
+            tenant_id=tenant_id,
+            title=title or stored.file_name,
+            content=stored.content,
+            doc_type=doc_type,
+            source_type=source_type or _source_type_from_name(stored.file_name),
+            description=description,
+            metadata=metadata_dict,
+            tags=tags_list,
+            language=language,
+            file_md5=stored.file_md5,
+            file_name=stored.file_name,
+            file_size=stored.file_size,
+            mime_type=stored.mime_type,
+            storage_path=stored.storage_path,
+            source_path=stored.source_path
+        )
+        return doc
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to upload document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documents/batch-import", response_model=BatchImportResponse)
+async def batch_import_documents(
+    request: BatchImportRequest,
+    document_manager: DocumentManager = Depends(get_document_manager),
+    document_storage: DocumentStorage = Depends(get_document_storage)
+):
+    """Import supported documents from an allowed mounted host directory."""
+    try:
+        scanned = document_storage.scan_directory(
+            directory=request.host_dir,
+            recursive=request.recursive,
+            include_patterns=request.include_patterns,
+            exclude_patterns=request.exclude_patterns
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to scan import directory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    results: List[ImportItemResult] = []
+    seen_md5: Dict[str, str] = {}
+
+    for item in scanned:
+        if item.file_md5 in seen_md5:
+            results.append(ImportItemResult(
+                file_name=item.file_name,
+                file_md5=item.file_md5,
+                source_path=item.source_path,
+                status="skipped",
+                reason="duplicate_in_batch"
+            ))
+            continue
+
+        seen_md5[item.file_md5] = item.source_path
+        existing = await document_manager.find_by_file_md5(
+            tenant_id=request.tenant_id,
+            file_md5=item.file_md5
+        )
+        if existing:
+            results.append(ImportItemResult(
+                file_name=item.file_name,
+                file_md5=item.file_md5,
+                source_path=item.source_path,
+                status="skipped",
+                reason="duplicate_in_database",
+                doc_id=existing.id
+            ))
+            continue
+
+        if request.dry_run:
+            results.append(ImportItemResult(
+                file_name=item.file_name,
+                file_md5=item.file_md5,
+                source_path=item.source_path,
+                status="would_import"
+            ))
+            continue
+
+        try:
+            stored = document_storage.archive_path(item.source_path, tenant_id=request.tenant_id)
+            doc = await document_manager.create_document(
+                tenant_id=request.tenant_id,
+                title=Path(stored.file_name).stem or stored.file_name,
+                content=stored.content,
+                doc_type=request.doc_type,
+                source_type=request.source_type or _source_type_from_name(stored.file_name),
+                description=None,
+                metadata=request.metadata or {},
+                tags=request.tags or [],
+                language=request.language or "zh",
+                file_md5=stored.file_md5,
+                file_name=stored.file_name,
+                file_size=stored.file_size,
+                mime_type=stored.mime_type,
+                storage_path=stored.storage_path,
+                source_path=stored.source_path
+            )
+            results.append(ImportItemResult(
+                file_name=stored.file_name,
+                file_md5=stored.file_md5,
+                source_path=stored.source_path,
+                storage_path=stored.storage_path,
+                status="imported",
+                doc_id=doc.id
+            ))
+        except Exception as e:
+            logger.error(f"Failed to import file {item.source_path}: {e}")
+            results.append(ImportItemResult(
+                file_name=item.file_name,
+                file_md5=item.file_md5,
+                source_path=item.source_path,
+                status="failed",
+                reason=str(e)
+            ))
+
+    return BatchImportResponse(
+        scanned=len(scanned),
+        imported=sum(1 for r in results if r.status == "imported"),
+        skipped=sum(1 for r in results if r.status == "skipped"),
+        failed=sum(1 for r in results if r.status == "failed"),
+        dry_run=request.dry_run,
+        results=results
+    )
 
 
 @router.get("/documents/{doc_id}", response_model=DocumentResponse)

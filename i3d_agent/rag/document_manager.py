@@ -61,7 +61,13 @@ class DocumentManager:
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         tags: Optional[List[str]] = None,
-        language: str = "zh"
+        language: str = "zh",
+        file_md5: Optional[str] = None,
+        file_name: Optional[str] = None,
+        file_size: Optional[int] = None,
+        mime_type: Optional[str] = None,
+        storage_path: Optional[str] = None,
+        source_path: Optional[str] = None
     ) -> DocumentResponse:
         """
         Create a new document and add to index queue.
@@ -100,7 +106,13 @@ class DocumentManager:
                 description=description,
                 metadata=metadata,
                 tags=tags,
-                language=language
+                language=language,
+                file_md5=file_md5,
+                file_name=file_name,
+                file_size=file_size,
+                mime_type=mime_type,
+                storage_path=storage_path,
+                source_path=source_path
             )
 
             # Add to index queue
@@ -192,7 +204,13 @@ class DocumentManager:
                 language=current.get('language'),
                 version=new_version,
                 parent_doc_id=current.get('id'),
-                is_latest=True
+                is_latest=True,
+                file_md5=current.get('file_md5'),
+                file_name=current.get('file_name'),
+                file_size=current.get('file_size'),
+                mime_type=current.get('mime_type'),
+                storage_path=current.get('storage_path'),
+                source_path=current.get('source_path')
             )
 
             # Add to index queue
@@ -406,6 +424,31 @@ class DocumentManager:
         finally:
             await self._release_connection(conn)
 
+    async def find_by_file_md5(
+        self,
+        tenant_id: str,
+        file_md5: str
+    ) -> Optional[DocumentResponse]:
+        """Find an active latest document by tenant and original file MD5."""
+        conn = await self._get_connection()
+        try:
+            row = await conn.fetchrow(
+                """
+                SELECT * FROM rag_documents
+                WHERE tenant_id = $1
+                  AND file_md5 = $2
+                  AND deleted_at IS NULL
+                  AND is_latest = true
+                LIMIT 1
+                """,
+                tenant_id,
+                file_md5
+            )
+            return self._row_to_document_response(row) if row else None
+
+        finally:
+            await self._release_connection(conn)
+
     # ========================================================================
     # Private helper methods
     # ========================================================================
@@ -430,15 +473,25 @@ class DocumentManager:
         language: str = "zh",
         version: int = 1,
         parent_doc_id: Optional[str] = None,
-        is_latest: bool = True
+        is_latest: bool = True,
+        file_md5: Optional[str] = None,
+        file_name: Optional[str] = None,
+        file_size: Optional[int] = None,
+        mime_type: Optional[str] = None,
+        storage_path: Optional[str] = None,
+        source_path: Optional[str] = None
     ) -> DocumentResponse:
         """Insert document into database."""
         query = """
             INSERT INTO rag_documents (
                 id, tenant_id, title, description, doc_type, source_type,
                 raw_content, content_hash, version, is_latest, parent_doc_id,
-                status, metadata, tags, language
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                status, metadata, tags, language,
+                file_md5, file_name, file_size, mime_type, storage_path, source_path
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                $13, $14, $15, $16, $17, $18, $19, $20, $21
+            )
             RETURNING *
         """
 
@@ -450,7 +503,8 @@ class DocumentManager:
             query,
             doc_id, tenant_id, title, description, doc_type, source_type,
             content, content_hash, version, is_latest, parent_doc_id,
-            'pending', metadata_json, tags_array, language
+            'pending', metadata_json, tags_array, language,
+            file_md5, file_name, file_size, mime_type, storage_path, source_path
         )
 
         return self._row_to_document_response(row)
@@ -675,6 +729,12 @@ class DocumentManager:
             metadata=metadata,
             tags=tags,
             language=row['language'],
+            file_md5=row.get('file_md5'),
+            file_name=row.get('file_name'),
+            file_size=row.get('file_size'),
+            mime_type=row.get('mime_type'),
+            storage_path=row.get('storage_path'),
+            source_path=row.get('source_path'),
             created_at=row['created_at'],
             updated_at=row['updated_at']
         )

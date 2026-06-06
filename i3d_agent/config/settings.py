@@ -138,6 +138,15 @@ class Settings(BaseSettings):
     # RAG Document Storage
     RAG_DATA_PATH: str = Field(default="./data/rag", description="RAG data directory")
     RAG_DOCUMENTS_PATH: str = Field(default="./data/rag/documents", description="Document storage path")
+    RAG_IMPORT_ROOTS: str = Field(
+        default="/mnt/rag-import",
+        description="Comma-separated container paths allowed for batch document import"
+    )
+
+    @property
+    def rag_import_roots_list(self) -> List[str]:
+        """Get RAG_IMPORT_ROOTS as a list."""
+        return [p.strip() for p in self.RAG_IMPORT_ROOTS.split(",") if p.strip()]
 
     # RAG Chunking Configuration
     CHUNK_SIZE_DEFAULT: int = Field(default=800, description="Default chunk size")

@@ -70,6 +70,14 @@ CREATE TABLE rag_documents (
     raw_content TEXT,
     content_hash VARCHAR(64),
 
+    -- Source file metadata
+    file_md5 VARCHAR(32),
+    file_name TEXT,
+    file_size BIGINT,
+    mime_type TEXT,
+    storage_path TEXT,
+    source_path TEXT,
+
     -- Version control
     version INT NOT NULL DEFAULT 1,
     is_latest BOOLEAN DEFAULT true,
@@ -104,6 +112,7 @@ CREATE INDEX idx_rag_docs_tenant_latest ON rag_documents(tenant_id, is_latest) W
 CREATE INDEX idx_rag_docs_type ON rag_documents(doc_type) WHERE deleted_at IS NULL;
 CREATE INDEX idx_rag_docs_tags ON rag_documents USING GIN(tags);
 CREATE INDEX idx_rag_docs_hash ON rag_documents(content_hash);
+CREATE INDEX idx_rag_docs_file_md5 ON rag_documents(tenant_id, file_md5) WHERE file_md5 IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX idx_rag_docs_parent ON rag_documents(parent_doc_id) WHERE parent_doc_id IS NOT NULL;
 
 -- ============================================================================

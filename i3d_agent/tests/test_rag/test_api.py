@@ -65,6 +65,113 @@ async def test_create_document():
 
 
 @pytest.mark.asyncio
+async def test_upload_document(tmp_path):
+    """Test single file upload API."""
+    from datetime import datetime
+    from fastapi import FastAPI
+    from httpx import AsyncClient, ASGITransport
+    from i3d_agent.rag.api import router, get_document_manager, get_document_storage
+    from i3d_agent.rag.models import DocumentResponse
+
+    mock_doc = DocumentResponse(
+        id="doc-1",
+        tenant_id="default",
+        title="hello.md",
+        description=None,
+        doc_type="technical",
+        source_type="md",
+        version=1,
+        is_latest=True,
+        status="pending",
+        metadata={},
+        tags=[],
+        language="zh",
+        file_md5="5d41402abc4b2a76b9719d911017c592",
+        file_name="hello.md",
+        file_size=5,
+        mime_type="text/markdown",
+        storage_path="/app/data/rag/documents/default/2026-06-06/file.md",
+        source_path=None,
+        created_at=datetime.now(),
+        updated_at=datetime.now()
+    )
+
+    mock_manager = AsyncMock()
+    mock_manager.create_document.return_value = mock_doc
+
+    test_app = FastAPI()
+    test_app.include_router(router)
+    test_app.dependency_overrides[get_document_manager] = lambda: mock_manager
+
+    from i3d_agent.rag.document_storage import DocumentStorage
+
+    test_app.dependency_overrides[get_document_storage] = lambda: DocumentStorage(
+        documents_path=str(tmp_path / "documents"),
+        import_roots=[]
+    )
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/rag/documents/upload",
+            data={"tenant_id": "default", "doc_type": "technical"},
+            files={"file": ("hello.md", b"hello", "text/markdown")}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["file_md5"] == "5d41402abc4b2a76b9719d911017c592"
+    mock_manager.create_document.assert_called_once()
+    kwargs = mock_manager.create_document.call_args.kwargs
+    assert kwargs["file_name"] == "hello.md"
+    assert kwargs["source_type"] == "md"
+
+
+@pytest.mark.asyncio
+async def test_batch_import_dry_run_filters_batch_duplicates():
+    """Test batch import dry-run duplicate filtering."""
+    from fastapi import FastAPI
+    from httpx import AsyncClient, ASGITransport
+    from i3d_agent.rag.api import router, get_document_manager, get_document_storage
+    from i3d_agent.rag.document_storage import ScannedFile
+
+    class FakeStorage:
+        def scan_directory(self, **kwargs):
+            return [
+                ScannedFile("/mnt/rag-import/a.md", "a.md", "same-md5", 4, "text/markdown"),
+                ScannedFile("/mnt/rag-import/b.md", "b.md", "same-md5", 4, "text/markdown"),
+            ]
+
+    mock_manager = AsyncMock()
+    mock_manager.find_by_file_md5.return_value = None
+
+    test_app = FastAPI()
+    test_app.include_router(router)
+    test_app.dependency_overrides[get_document_manager] = lambda: mock_manager
+    test_app.dependency_overrides[get_document_storage] = lambda: FakeStorage()
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/rag/documents/batch-import",
+            json={
+                "host_dir": "/mnt/rag-import",
+                "tenant_id": "default",
+                "doc_type": "technical",
+                "dry_run": True
+            }
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["scanned"] == 2
+    assert data["imported"] == 0
+    assert data["skipped"] == 1
+    assert data["results"][0]["status"] == "would_import"
+    assert data["results"][1]["reason"] == "duplicate_in_batch"
+    mock_manager.create_document.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_search():
     """测试检索 API"""
     from i3d_agent.rag.models import Chunk, RetrievalResult
@@ -81,6 +188,7 @@ async def test_search():
                 content="Test content",
                 embedding=[],
                 chunk_index=0,
+                token_count=None,
                 metadata={"title": "Test Doc"},
                 doc_version=1,
                 final_score=0.9
@@ -96,7 +204,7 @@ async def test_search():
         mock_ctrl.retrieve.return_value = mock_result
         mock_ctrl_class.return_value = mock_ctrl
 
-    with patch('i3d_agent.rag.api.EmbeddingService') as mock_embed_class:
+    with patch('i3d_agent.rag.embedding.EmbeddingService') as mock_embed_class:
         mock_embed = AsyncMock()
         mock_embed.embed_text.return_value = [0.1] * 1536
         mock_embed_class.return_value = mock_embed
@@ -145,7 +253,7 @@ async def test_ask():
         mock_ctrl.retrieve.return_value = mock_result
         mock_ctrl_class.return_value = mock_ctrl
 
-    with patch('i3d_agent.rag.api.EmbeddingService') as mock_embed_class:
+    with patch('i3d_agent.rag.embedding.EmbeddingService') as mock_embed_class:
         mock_embed = AsyncMock()
         mock_embed.embed_text.return_value = [0.1] * 1536
         mock_embed_class.return_value = mock_embed
@@ -155,24 +263,26 @@ async def test_ask():
         mock_client.generate.return_value = "Test answer"
         mock_llm.return_value = mock_client
 
-        # Create a test app with RAG router
-        test_app = create_app()
+        with patch('i3d_agent.rag.api.AgenticRAGController', return_value=mock_ctrl), \
+             patch('i3d_agent.rag.embedding.EmbeddingService', return_value=mock_embed):
+            # Create a test app with RAG router
+            test_app = create_app()
 
-        # Create test client
-        from httpx import AsyncClient, ASGITransport
-        transport = ASGITransport(app=test_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/rag/ask",
-                json={
-                    "question": "How to configure API?",
-                    "tenant_id": "default"
-                }
-            )
+            # Create test client
+            from httpx import AsyncClient, ASGITransport
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/rag/ask",
+                    json={
+                        "question": "How to configure API?",
+                        "tenant_id": "default"
+                    }
+                )
 
-            assert response.status_code == 200
-            data = response.json()
-            assert "answer" in data
+                assert response.status_code == 200
+                data = response.json()
+                assert "answer" in data
 
 
 @pytest.mark.asyncio
@@ -198,7 +308,7 @@ async def test_get_index_status():
         from httpx import AsyncClient, ASGITransport
         transport = ASGITransport(app=test_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get("/api/v1/rag/index/status")
+            response = await client.get("/api/v1/rag/index/status?tenant_id=default")
 
             assert response.status_code == 200
             data = response.json()

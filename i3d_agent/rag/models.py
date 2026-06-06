@@ -50,11 +50,64 @@ class DocumentResponse(BaseModel):
     metadata: Dict[str, Any]
     tags: List[str]
     language: str
+    file_md5: Optional[str] = None
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
+    mime_type: Optional[str] = None
+    storage_path: Optional[str] = None
+    source_path: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class BatchImportRequest(BaseModel):
+    """Request for importing documents from a mounted host directory."""
+
+    host_dir: str = Field(..., min_length=1, description="Container path under an allowed import root")
+    tenant_id: str = Field(..., description="Tenant ID")
+    doc_type: str = Field(..., description="Document type: technical, business, api")
+    source_type: Optional[str] = Field(None, description="Source type override")
+    recursive: bool = Field(True, description="Scan subdirectories")
+    include_patterns: Optional[List[str]] = Field(None, description="Glob include patterns")
+    exclude_patterns: Optional[List[str]] = Field(None, description="Glob exclude patterns")
+    dry_run: bool = Field(False, description="Only scan and report, without writing")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Shared metadata")
+    tags: Optional[List[str]] = Field(default_factory=list, description="Shared tags")
+    language: Optional[str] = Field("zh", description="Language")
+
+    @field_validator('doc_type')
+    @classmethod
+    def validate_doc_type(cls, v):
+        valid_types = {'technical', 'business', 'api'}
+        if v not in valid_types:
+            raise ValueError(f'doc_type must be one of {valid_types}')
+        return v
+
+
+class ImportItemResult(BaseModel):
+    """Result for one scanned or imported file."""
+
+    file_name: str
+    file_md5: Optional[str] = None
+    source_path: Optional[str] = None
+    storage_path: Optional[str] = None
+    status: str
+    reason: Optional[str] = None
+    doc_id: Optional[str] = None
+
+
+class BatchImportResponse(BaseModel):
+    """Batch import summary."""
+
+    scanned: int
+    imported: int
+    skipped: int
+    failed: int
+    dry_run: bool
+    results: List[ImportItemResult]
 
 
 class Chunk(BaseModel):

@@ -20,6 +20,8 @@ services:
     volumes:
       - ./frontend:/app/frontend
       - ./i3d_agent:/app/i3d_agent
+      - ./data/rag:/app/data/rag
+      - ${RAG_IMPORT_HOST_DIR:-./data/rag/import}:/mnt/rag-import:ro
     environment:
       # Database
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/i3d_agent
@@ -53,6 +55,10 @@ services:
       - LOG_LEVEL=INFO
       - LOG_FORMAT=json
       - ENVIRONMENT=development
+      # RAG document storage/import
+      - RAG_DATA_PATH=./data/rag
+      - RAG_DOCUMENTS_PATH=./data/rag/documents
+      - RAG_IMPORT_ROOTS=/mnt/rag-import
     depends_on:
       - postgres
       - redis
@@ -133,6 +139,8 @@ services:
       - RERANK_MODEL=qwen3-vl-rerank
       # RAG Configuration
       - RAG_DATA_PATH=./data/rag
+      - RAG_DOCUMENTS_PATH=./data/rag/documents
+      - RAG_IMPORT_ROOTS=/mnt/rag-import
       - CHUNK_SIZE_DEFAULT=800
       - AGENTIC_QUERY_EXPANSION_COUNT=3
       - INDEX_WORKER_CONCURRENCY=2
@@ -148,6 +156,8 @@ services:
       - postgres
       - redis
       - infinity-embeddings
+    volumes:
+      - ./data/rag:/app/data/rag
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
