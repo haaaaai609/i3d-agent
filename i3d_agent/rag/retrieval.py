@@ -34,6 +34,14 @@ def _parse_vector(vec: Any) -> List[float]:
     return list(vec)
 
 
+def _preview_query(query: str, limit: int = 80) -> str:
+    """Return a single-line preview for logging."""
+    preview = " ".join((query or "").split())
+    if len(preview) > limit:
+        return f"{preview[:limit]}..."
+    return preview
+
+
 class RetrievalEngine:
     """
     Hybrid retrieval engine combining vector and BM25 search.
@@ -170,7 +178,7 @@ class RetrievalEngine:
 
             rows = await conn.fetch(query, *params)
 
-            logger.info(f"Vector search returned {len(rows)} chunks (tenant: {tenant_id}, top_k: {top_k})")
+            logger.debug(f"Vector search returned {len(rows)} chunks (tenant: {tenant_id}, top_k: {top_k})")
 
             results = []
             for row in rows:
@@ -226,8 +234,9 @@ class RetrievalEngine:
         """
         conn = await self._get_connection()
         try:
+            search_query = query
             # Use ts_rank for BM25-like scoring
-            query = """
+            sql = """
                 SELECT
                     id, doc_id, tenant_id, content, embedding,
                     chunk_index, metadata, doc_version,
@@ -240,10 +249,10 @@ class RetrievalEngine:
                 LIMIT $3
             """
 
-            params = [query, tenant_id, top_k]
+            params = [search_query, tenant_id, top_k]
 
             if threshold is not None:
-                query = """
+                sql = """
                     SELECT
                         id, doc_id, tenant_id, content, embedding,
                         chunk_index, metadata, doc_version,
@@ -258,9 +267,12 @@ class RetrievalEngine:
                 """
                 params.append(threshold)
 
-            rows = await conn.fetch(query, *params)
+            rows = await conn.fetch(sql, *params)
 
-            logger.info(f"BM25 search returned {len(rows)} chunks for query '{query[:50]}...' (tenant: {tenant_id}, top_k: {top_k})")
+            logger.debug(
+                f"BM25 search returned {len(rows)} chunks for query "
+                f"'{_preview_query(search_query)}' (tenant: {tenant_id}, top_k: {top_k})"
+            )
 
             results = []
             for row in rows:
@@ -339,7 +351,10 @@ class RetrievalEngine:
             self.bm25_search(query, tenant_id, top_k * 2)
         )
 
-        logger.info(f"Hybrid retrieval: vector={len(vector_results)}, bm25={len(bm25_results)} results (search_type: {search_type}, alpha: {alpha}, beta: {beta})")
+        logger.debug(
+            f"Hybrid retrieval: vector={len(vector_results)}, bm25={len(bm25_results)} "
+            f"results (search_type: {search_type}, alpha: {alpha}, beta: {beta})"
+        )
 
         # Create lookup for BM25 results
         bm25_lookup = {result.id: result for result in bm25_results}
@@ -408,7 +423,7 @@ class RetrievalEngine:
         # Sort by final score and return top_k
         merged_results.sort(key=lambda x: x.final_score or 0.0, reverse=True)
         final_results = merged_results[:top_k]
-        logger.info(f"Hybrid retrieval merged and deduplicated to {len(final_results)} chunks (returned top_k: {top_k})")
+        logger.debug(f"Hybrid retrieval merged and deduplicated to {len(final_results)} chunks (returned top_k: {top_k})")
         return final_results
 
     def _normalize_scores(self, scores: List[float]) -> List[float]:

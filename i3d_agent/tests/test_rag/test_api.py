@@ -276,7 +276,8 @@ async def test_ask():
                     "/api/v1/rag/ask",
                     json={
                         "question": "How to configure API?",
-                        "tenant_id": "default"
+                        "tenant_id": "default",
+                        "enable_multi_step": False
                     }
                 )
 

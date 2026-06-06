@@ -410,6 +410,7 @@ async def search(
         result = await rag_controller.retrieve(
             query=request.query,
             tenant_id=request.tenant_id,
+            query_vector=query_vector,
             top_k=request.top_k,
             enable_expansion=request.enable_expansion,
             enable_hyde=request.enable_hyde,
@@ -453,15 +454,26 @@ async def ask(
         query_vector = await embedding_service.embed_text(request.question)
 
         # 执行检索
-        result = await rag_controller.retrieve(
-            query=request.question,
-            tenant_id=request.tenant_id,
-            top_k=request.top_k,
-            enable_expansion=True,
-            enable_hyde=True,
-            enable_rerank=True,
-            enable_multi_step=request.enable_multi_step
-        )
+        if request.enable_multi_step:
+            result = await rag_controller.retrieve_with_multi_step(
+                query=request.question,
+                tenant_id=request.tenant_id,
+                query_vector=query_vector,
+                top_k=request.top_k,
+                enable_expansion=True,
+                enable_hyde=True,
+                enable_rerank=True
+            )
+        else:
+            result = await rag_controller.retrieve(
+                query=request.question,
+                tenant_id=request.tenant_id,
+                query_vector=query_vector,
+                top_k=request.top_k,
+                enable_expansion=True,
+                enable_hyde=True,
+                enable_rerank=True
+            )
 
         if not result.results:
             return {

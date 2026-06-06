@@ -176,6 +176,10 @@ class AgenticRAGController:
 
         # Step 4: Deduplicate and merge results
         merged_chunks = self._deduplicate_and_merge(all_chunks)
+        logger.info(
+            f"Retrieved {len(all_chunks)} raw chunks from {len(retrieval_queries)} "
+            f"retrieval queries; deduplicated to {len(merged_chunks)} chunks"
+        )
 
         # Step 5: Reranking
         if enable_rerank and merged_chunks:
