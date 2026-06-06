@@ -33,9 +33,10 @@ services:
       - DEFAULT_LLM_PROVIDER=dashscope
       - DEFAULT_LLM_MODEL=qwen-plus
       # Embedding (本地 Infinity 服务)
-      - EMBEDDING_PROVIDER=dashscope
-      - EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-      - EMBEDDING_MODEL=text-embedding-v3
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://infinity-embeddings:7997}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gte-Qwen2-1.5B-instruct}
+      - VECTOR_DIMENSION=${VECTOR_DIMENSION:-1536}
       # External Services (复用现有 MinIO)
       - MINIO_API_URL=http://host.docker.internal:19002
       - INFER_ENGINEER_URL=http://host.docker.internal:18000
@@ -55,6 +56,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - infinity-embeddings
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -78,23 +80,33 @@ services:
     networks:
       - i3d-network
 
-  ollama-embeddings:
-    image: ollama/ollama:latest
+  infinity-embeddings:
+    image: michaelf34/infinity:latest
     ports:
-      - "7997:11434"
+      - "7997:7997"
+    environment:
+      - HF_HOME=/cache
     volumes:
-      - ollama_data:/root/.ollama
+      - infinity_cache:/cache
     networks:
       - i3d-network
     restart: unless-stopped
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        ollama serve &
-        sleep 5
-        ollama pull nomic-embed-text
-        wait
+    command:
+      - v2
+      - --model-id
+      - Alibaba-NLP/gte-Qwen2-1.5B-instruct
+      - --served-model-name
+      - gte-Qwen2-1.5B-instruct
+      - --trust-remote-code
+      - --engine
+      - torch
+      - --device
+      - cpu
+      - --no-compile
+      - --no-bettertransformer
+      - --no-model-warmup
+      - --port
+      - "7997"
 
   rag-worker:
     build: .
@@ -112,9 +124,10 @@ services:
       - DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
       - DEFAULT_LLM_PROVIDER=dashscope
       # Embedding (本地 Infinity 服务)
-      - EMBEDDING_PROVIDER=dashscope
-      - EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-      - EMBEDDING_MODEL=text-embedding-v3
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://infinity-embeddings:7997}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gte-Qwen2-1.5B-instruct}
+      - VECTOR_DIMENSION=${VECTOR_DIMENSION:-1536}
       # Reranking (DashScope Qwen3-VL-Rerank)
       - RERANK_PROVIDER=dashscope
       - RERANK_MODEL=qwen3-vl-rerank
@@ -134,6 +147,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - infinity-embeddings
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -142,7 +156,7 @@ services:
 
 volumes:
   postgres_data:
-  ollama_data:
+  infinity_cache:
 
 networks:
   i3d-network:

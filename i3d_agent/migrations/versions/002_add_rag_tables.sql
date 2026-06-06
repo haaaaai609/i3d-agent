@@ -16,7 +16,7 @@
 -- - PostgreSQL 15+ with pgvector extension
 -- - All tables support multi-tenancy via tenant_id column
 -- - Row-Level Security (RLS) enabled on all tables
--- - Vector columns use 1536 dimensions for OpenAI embeddings
+-- - Vector columns use 1536 dimensions for local gte-Qwen2-1.5B-instruct embeddings
 -- ============================================================================
 
 -- ============================================================================

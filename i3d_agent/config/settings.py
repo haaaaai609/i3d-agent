@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     )
     EMBEDDING_PROVIDER: str = Field(
         default="openai",
-        description="Embedding service provider (openai, dashscope, local)"
+        description="Embedding service provider (openai, dashscope, local, ollama)"
     )
     EMBEDDING_BASE_URL: str = Field(
         default="https://api.openai.com/v1",

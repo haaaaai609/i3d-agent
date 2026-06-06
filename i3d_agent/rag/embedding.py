@@ -166,7 +166,7 @@ class EmbeddingService:
             else:
                 raise ValueError(
                     f"Unknown EMBEDDING_PROVIDER: {self.settings.EMBEDDING_PROVIDER}. "
-                    "Supported: local, dashscope, openai"
+                    "Supported: local, ollama, dashscope, openai"
                 )
 
         except Exception as e:
@@ -236,7 +236,7 @@ class EmbeddingService:
         for text in texts:
             data = {
                 "model": self.settings.EMBEDDING_MODEL,
-                "prompt": text,
+                "input": text,
             }
 
             try:
@@ -247,6 +247,8 @@ class EmbeddingService:
                 # Ollama 响应格式: {"embedding": [...]}
                 if "embedding" in result:
                     results.append(result["embedding"])
+                elif "embeddings" in result and result["embeddings"]:
+                    results.append(result["embeddings"][0])
                 else:
                     logger.error(f"Unexpected Ollama response: {result}")
                     raise ValueError("No embedding in Ollama response")
