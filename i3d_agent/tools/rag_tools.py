@@ -14,6 +14,7 @@ import asyncpg
 
 from langchain_core.tools import tool
 from i3d_agent.config.settings import get_settings
+from i3d_agent.rag.source_format import chunk_to_source
 
 
 # ========== 全局数据库池 ==========
@@ -107,11 +108,9 @@ def retrieve_documents(
 
         return [
             {
-                "doc_id": r.doc_id,
-                "title": r.metadata.get("title", "Unknown"),
+                **chunk_to_source(r),
                 "content": r.content,
-                "score": r.final_score,
-                "metadata": r.metadata
+                "metadata": r.metadata,
             }
             for r in result.results
         ]

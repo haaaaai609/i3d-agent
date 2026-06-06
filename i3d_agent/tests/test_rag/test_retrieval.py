@@ -293,6 +293,44 @@ def test_classify_query_default():
 
 
 @pytest.mark.asyncio
+async def test_vector_search_merges_document_metadata():
+    """Retrieved chunks should expose document title and file metadata."""
+    engine = RetrievalEngine()
+
+    mock_conn = AsyncMock()
+    mock_conn.fetch.return_value = [
+        {
+            'id': 'c1',
+            'doc_id': 'd1',
+            'tenant_id': 'default',
+            'content': 'Content 1',
+            'embedding': [0.1] * 1536,
+            'chunk_index': 0,
+            'token_count': 2,
+            'metadata': {},
+            'doc_version': 1,
+            'doc_title': 'Design Proposal',
+            'doc_file_name': 'design.md',
+            'doc_file_md5': 'abc',
+            'doc_storage_path': '/app/data/rag/design.md',
+            'doc_source_path': '/mnt/rag-import/design.md',
+            'score': 0.95
+        }
+    ]
+
+    with patch.object(engine, '_get_connection', return_value=mock_conn):
+        results = await engine.vector_search(
+            query_vector=[0.1] * 1536,
+            tenant_id="default",
+            top_k=10
+        )
+
+    assert results[0].metadata["title"] == "Design Proposal"
+    assert results[0].metadata["source"] == "design.md"
+    assert results[0].metadata["file_md5"] == "abc"
+
+
+@pytest.mark.asyncio
 async def test_vector_search_with_connection():
     """测试向量检索使用数据库连接"""
     engine = RetrievalEngine(pool=AsyncMock())

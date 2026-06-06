@@ -6,7 +6,7 @@ messages, requests, responses, and source documents.
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -37,6 +37,8 @@ class Message(BaseModel):
 class SourceDocument(BaseModel):
     """A source document from RAG retrieval."""
 
+    doc_id: Optional[str] = Field(default=None, description="Document ID")
+    chunk_id: Optional[str] = Field(default=None, description="Chunk ID")
     title: str = Field(..., description="Document title")
     source: str = Field(..., description="Document source/file path")
     score: float = Field(
@@ -49,6 +51,14 @@ class SourceDocument(BaseModel):
         default=None,
         description="Chunk index in the document"
     )
+    doc_version: Optional[int] = Field(default=None, description="Document version")
+    file_name: Optional[str] = Field(default=None, description="Original file name")
+    file_md5: Optional[str] = Field(default=None, description="Original file MD5")
+    storage_path: Optional[str] = Field(default=None, description="Archived storage path")
+    source_path: Optional[str] = Field(default=None, description="Original source path")
+    vector_score: Optional[float] = Field(default=None, description="Vector similarity score")
+    bm25_score: Optional[float] = Field(default=None, description="BM25 keyword score")
+    score_details: Optional[Dict[str, Any]] = Field(default=None, description="Score calculation details")
 
 
 class ChatRequest(BaseModel):

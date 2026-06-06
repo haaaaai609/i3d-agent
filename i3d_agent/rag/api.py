@@ -18,6 +18,7 @@ from i3d_agent.rag.document_manager import DocumentManager
 from i3d_agent.rag.document_storage import DocumentStorage
 from i3d_agent.rag.controller import AgenticRAGController
 from i3d_agent.rag.retrieval import RetrievalEngine
+from i3d_agent.rag.source_format import chunk_to_source
 from i3d_agent.rag.monitor import MonitorService
 from i3d_agent.rag.index_worker import IndexWorker
 from i3d_agent.utils.logger import get_logger
@@ -426,7 +427,8 @@ async def search(
                     "doc_id": r.doc_id,
                     "content": r.content,
                     "score": r.final_score,
-                    "metadata": r.metadata
+                    "metadata": r.metadata,
+                    "source": chunk_to_source(r)
                 }
                 for r in result.results
             ],
@@ -523,14 +525,7 @@ async def ask(
         return {
             "question": request.question,
             "answer": answer,
-            "sources": [
-                {
-                    "doc_id": r.doc_id,
-                    "title": r.metadata.get("title", "Unknown"),
-                    "score": r.final_score
-                }
-                for r in result.results[:3]
-            ],
+            "sources": [chunk_to_source(r) for r in result.results[:3]],
             "status": "success",
             "metadata": {
                 "iterations": result.iterations,

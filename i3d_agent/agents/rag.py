@@ -6,6 +6,7 @@ import asyncpg
 from i3d_agent.agents.base import AgentConfig, BaseAgent
 from i3d_agent.rag.controller import AgenticRAGController
 from i3d_agent.rag.retrieval import RetrievalEngine
+from i3d_agent.rag.source_format import chunk_to_source
 from i3d_agent.llm import get_llm_client, Message
 from i3d_agent.utils.logger import get_logger
 
@@ -110,15 +111,7 @@ class RAGAgent(BaseAgent):
             answer = await self._generate_answer(question, context)
 
             # Extract sources
-            sources = [
-                {
-                    "doc_id": r.doc_id,
-                    "title": r.metadata.get("title", "Unknown"),
-                    "score": r.final_score,
-                    "chunk_index": r.chunk_index
-                }
-                for r in results[:3]  # Top 3 sources
-            ]
+            sources = [chunk_to_source(r) for r in results[:3]]
 
             return {
                 "question": question,

@@ -42,6 +42,50 @@ def _preview_query(query: str, limit: int = 80) -> str:
     return preview
 
 
+def _row_get(row: Any, key: str, default: Any = None) -> Any:
+    """Read a key from asyncpg records, dicts, or test doubles."""
+    try:
+        value = row.get(key, default)
+    except AttributeError:
+        try:
+            value = row[key]
+        except (KeyError, IndexError, TypeError):
+            value = default
+    except KeyError:
+        value = default
+    return value
+
+
+def _metadata_from_row(row: Any) -> Dict[str, Any]:
+    """Merge chunk metadata with document-level fields selected by retrieval."""
+    metadata = _row_get(row, 'metadata') or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    else:
+        metadata = dict(metadata)
+
+    document_fields = {
+        "title": _row_get(row, "doc_title"),
+        "file_name": _row_get(row, "doc_file_name"),
+        "file_md5": _row_get(row, "doc_file_md5"),
+        "storage_path": _row_get(row, "doc_storage_path"),
+        "source_path": _row_get(row, "doc_source_path"),
+    }
+    for key, value in document_fields.items():
+        if value is not None and (key not in metadata or not metadata.get(key)):
+            metadata[key] = value
+
+    if not metadata.get("source"):
+        metadata["source"] = (
+            metadata.get("file_name")
+            or metadata.get("source_path")
+            or metadata.get("storage_path")
+            or metadata.get("title")
+        )
+
+    return metadata
+
+
 class RetrievalEngine:
     """
     Hybrid retrieval engine combining vector and BM25 search.
@@ -147,14 +191,21 @@ class RetrievalEngine:
 
             query = """
                 SELECT
-                    id, doc_id, tenant_id, content, embedding,
-                    chunk_index, metadata, doc_version,
-                    1 - (embedding <=> $1::vector) as score
-                FROM rag_chunks
-                WHERE tenant_id = $2
-                    AND deleted_at IS NULL
-                    AND embedding IS NOT NULL
-                ORDER BY embedding <=> $1::vector
+                    c.id, c.doc_id, c.tenant_id, c.content, c.embedding,
+                    c.chunk_index, c.token_count, c.metadata, c.doc_version,
+                    d.title AS doc_title, d.file_name AS doc_file_name,
+                    d.file_md5 AS doc_file_md5, d.storage_path AS doc_storage_path,
+                    d.source_path AS doc_source_path,
+                    1 - (c.embedding <=> $1::vector) as score
+                FROM rag_chunks c
+                JOIN rag_documents d ON d.id = c.doc_id
+                WHERE c.tenant_id = $2
+                    AND d.tenant_id = $2
+                    AND c.deleted_at IS NULL
+                    AND d.deleted_at IS NULL
+                    AND d.is_latest = true
+                    AND c.embedding IS NOT NULL
+                ORDER BY c.embedding <=> $1::vector
                 LIMIT $3
             """
 
@@ -163,15 +214,22 @@ class RetrievalEngine:
             if threshold is not None:
                 query = """
                     SELECT
-                        id, doc_id, tenant_id, content, embedding,
-                        chunk_index, metadata, doc_version,
-                        1 - (embedding <=> $1::vector) as score
-                    FROM rag_chunks
-                    WHERE tenant_id = $2
-                        AND deleted_at IS NULL
-                        AND embedding IS NOT NULL
-                        AND (1 - (embedding <=> $1::vector)) >= $4
-                    ORDER BY embedding <=> $1::vector
+                        c.id, c.doc_id, c.tenant_id, c.content, c.embedding,
+                        c.chunk_index, c.token_count, c.metadata, c.doc_version,
+                        d.title AS doc_title, d.file_name AS doc_file_name,
+                        d.file_md5 AS doc_file_md5, d.storage_path AS doc_storage_path,
+                        d.source_path AS doc_source_path,
+                        1 - (c.embedding <=> $1::vector) as score
+                    FROM rag_chunks c
+                    JOIN rag_documents d ON d.id = c.doc_id
+                    WHERE c.tenant_id = $2
+                        AND d.tenant_id = $2
+                        AND c.deleted_at IS NULL
+                        AND d.deleted_at IS NULL
+                        AND d.is_latest = true
+                        AND c.embedding IS NOT NULL
+                        AND (1 - (c.embedding <=> $1::vector)) >= $4
+                    ORDER BY c.embedding <=> $1::vector
                     LIMIT $3
                 """
                 params.append(threshold)
@@ -183,14 +241,8 @@ class RetrievalEngine:
             results = []
             for row in rows:
                 # Safely parse embedding from pgvector
-                embedding = _parse_vector(row.get('embedding'))
-
-                # Safely handle metadata (already dict from JSONB)
-                metadata = row.get('metadata')
-                if metadata is None:
-                    metadata = {}
-                elif not isinstance(metadata, dict):
-                    metadata = {}
+                embedding = _parse_vector(_row_get(row, 'embedding'))
+                metadata = _metadata_from_row(row)
 
                 chunk = Chunk(
                     id=str(row['id']),
@@ -199,7 +251,7 @@ class RetrievalEngine:
                     content=row['content'],
                     embedding=embedding,
                     chunk_index=row['chunk_index'],
-                    token_count=row.get('token_count'),
+                    token_count=_row_get(row, 'token_count'),
                     metadata=metadata,
                     doc_version=row['doc_version'],
                     vector_score=float(row['score']),
@@ -238,13 +290,20 @@ class RetrievalEngine:
             # Use ts_rank for BM25-like scoring
             sql = """
                 SELECT
-                    id, doc_id, tenant_id, content, embedding,
-                    chunk_index, metadata, doc_version,
-                    ts_rank(content_tsv, plainto_tsquery('simple', $1)) as score
-                FROM rag_chunks
-                WHERE tenant_id = $2
-                    AND deleted_at IS NULL
-                    AND content_tsv @@ plainto_tsquery('simple', $1)
+                    c.id, c.doc_id, c.tenant_id, c.content, c.embedding,
+                    c.chunk_index, c.token_count, c.metadata, c.doc_version,
+                    d.title AS doc_title, d.file_name AS doc_file_name,
+                    d.file_md5 AS doc_file_md5, d.storage_path AS doc_storage_path,
+                    d.source_path AS doc_source_path,
+                    ts_rank(c.content_tsv, plainto_tsquery('simple', $1)) as score
+                FROM rag_chunks c
+                JOIN rag_documents d ON d.id = c.doc_id
+                WHERE c.tenant_id = $2
+                    AND d.tenant_id = $2
+                    AND c.deleted_at IS NULL
+                    AND d.deleted_at IS NULL
+                    AND d.is_latest = true
+                    AND c.content_tsv @@ plainto_tsquery('simple', $1)
                 ORDER BY score DESC
                 LIMIT $3
             """
@@ -254,14 +313,21 @@ class RetrievalEngine:
             if threshold is not None:
                 sql = """
                     SELECT
-                        id, doc_id, tenant_id, content, embedding,
-                        chunk_index, metadata, doc_version,
-                        ts_rank(content_tsv, plainto_tsquery('simple', $1)) as score
-                    FROM rag_chunks
-                    WHERE tenant_id = $2
-                        AND deleted_at IS NULL
-                        AND content_tsv @@ plainto_tsquery('simple', $1)
-                        AND ts_rank(content_tsv, plainto_tsquery('simple', $1)) >= $4
+                        c.id, c.doc_id, c.tenant_id, c.content, c.embedding,
+                        c.chunk_index, c.token_count, c.metadata, c.doc_version,
+                        d.title AS doc_title, d.file_name AS doc_file_name,
+                        d.file_md5 AS doc_file_md5, d.storage_path AS doc_storage_path,
+                        d.source_path AS doc_source_path,
+                        ts_rank(c.content_tsv, plainto_tsquery('simple', $1)) as score
+                    FROM rag_chunks c
+                    JOIN rag_documents d ON d.id = c.doc_id
+                    WHERE c.tenant_id = $2
+                        AND d.tenant_id = $2
+                        AND c.deleted_at IS NULL
+                        AND d.deleted_at IS NULL
+                        AND d.is_latest = true
+                        AND c.content_tsv @@ plainto_tsquery('simple', $1)
+                        AND ts_rank(c.content_tsv, plainto_tsquery('simple', $1)) >= $4
                     ORDER BY score DESC
                     LIMIT $3
                 """
@@ -277,14 +343,8 @@ class RetrievalEngine:
             results = []
             for row in rows:
                 # Safely parse embedding from pgvector
-                embedding = _parse_vector(row.get('embedding'))
-
-                # Safely handle metadata (already dict from JSONB)
-                metadata = row.get('metadata')
-                if metadata is None:
-                    metadata = {}
-                elif not isinstance(metadata, dict):
-                    metadata = {}
+                embedding = _parse_vector(_row_get(row, 'embedding'))
+                metadata = _metadata_from_row(row)
 
                 chunk = Chunk(
                     id=str(row['id']),
@@ -293,7 +353,7 @@ class RetrievalEngine:
                     content=row['content'],
                     embedding=embedding,
                     chunk_index=row['chunk_index'],
-                    token_count=row.get('token_count'),
+                    token_count=_row_get(row, 'token_count'),
                     metadata=metadata,
                     doc_version=row['doc_version'],
                     vector_score=None,
@@ -378,6 +438,14 @@ class RetrievalEngine:
             # Calculate final score
             final_score = alpha * vector_norm + beta * bm25_norm
 
+            metadata = dict(v_result.metadata or {})
+            metadata["score_detail"] = {
+                "vector_weight": alpha,
+                "bm25_weight": beta,
+                "search_type": search_type,
+                "formula": "final_score = vector_weight * vector_score + bm25_weight * bm25_score",
+            }
+
             # Create merged chunk
             merged_chunk = Chunk(
                 id=v_result.id,
@@ -387,7 +455,7 @@ class RetrievalEngine:
                 embedding=v_result.embedding,
                 chunk_index=v_result.chunk_index,
                 token_count=v_result.token_count,
-                metadata=v_result.metadata,
+                metadata=metadata,
                 doc_version=v_result.doc_version,
                 vector_score=v_result.vector_score,
                 bm25_score=b_result.bm25_score if b_result else 0.0,
@@ -404,6 +472,14 @@ class RetrievalEngine:
                 bm25_norm = b_result.bm25_score if b_result.bm25_score else 0.0
                 final_score = alpha * vector_norm + beta * bm25_norm
 
+                metadata = dict(b_result.metadata or {})
+                metadata["score_detail"] = {
+                    "vector_weight": alpha,
+                    "bm25_weight": beta,
+                    "search_type": search_type,
+                    "formula": "final_score = vector_weight * vector_score + bm25_weight * bm25_score",
+                }
+
                 merged_chunk = Chunk(
                     id=b_result.id,
                     doc_id=b_result.doc_id,
@@ -412,7 +488,7 @@ class RetrievalEngine:
                     embedding=b_result.embedding,
                     chunk_index=b_result.chunk_index,
                     token_count=b_result.token_count,
-                    metadata=b_result.metadata,
+                    metadata=metadata,
                     doc_version=b_result.doc_version,
                     vector_score=0.0,
                     bm25_score=b_result.bm25_score,
