@@ -1758,3 +1758,186 @@ Upon completion, the following must be true:
 ---
 
 **End of Implementation Plan**
+
+---
+
+## 2026-06-09 Revision: ChatGPT-Style Chat + RAG Management Menu
+
+**Status:** This revision supersedes any earlier plan steps that require visible agent selection, agent switching tests, or a permanent tenant/user settings section in the sidebar.
+
+**Updated Goal:** Redesign the existing Vue frontend into a cleaner ChatGPT-style workspace while adding RAG management as a first-level menu item.
+
+**Product decisions:**
+
+- Keep the left conversation sidebar for chat: new chat, history, rename, delete, and pin remain available.
+- Remove the visible Agent selector from the chat UI.
+- Do not expose agent selection to users. Routing is handled by the backend supervisor.
+- Add a first-level left navigation with `聊天` and `RAG 管理`.
+- Keep `tenantId` and `userId`, but move both into a settings modal.
+- Share the same `tenantId` between chat and RAG management.
+- Keep streaming mode, but move it into the settings modal unless a compact header toggle is still needed for debugging.
+
+### Revised File Structure
+
+```
+/frontend/src/
+├── App.vue
+├── components/
+│   ├── AppSidebar.vue                 # First-level nav + contextual sidebar content
+│   ├── SettingsModal.vue              # Tenant/user/stream settings
+│   ├── ChatArea.vue                   # Simplified chat shell
+│   ├── MessageList.vue
+│   ├── MessageItem.vue
+│   ├── InputArea.vue
+│   ├── SessionItem.vue
+│   ├── SourcesList.vue
+│   ├── ThoughtProcess.vue
+│   └── rag/
+│       ├── RagConsole.vue
+│       ├── RagDashboard.vue
+│       ├── RagIngestion.vue
+│       ├── SingleUploadPanel.vue
+│       ├── BatchImportPanel.vue
+│       ├── RagDocumentsTable.vue
+│       ├── RagDocumentDetail.vue
+│       ├── RagRetrievalLab.vue
+│       ├── RagIndexMonitor.vue
+│       ├── RagQualityPanel.vue
+│       └── RagConfigPanel.vue
+├── composables/
+│   ├── useChat.js
+│   ├── useSessions.js
+│   └── usePreferences.js
+└── utils/
+    ├── api.js
+    └── ragApi.js
+```
+
+`AgentSelector.vue` and `useAgents.js` should be removed from the active UI path. They may be deleted after confirming no imports remain.
+
+### Task R1: Root Layout And Navigation
+
+**Files:**
+- Modify: `/frontend/src/App.vue`
+- Create: `/frontend/src/components/AppSidebar.vue`
+- Create: `/frontend/src/components/SettingsModal.vue`
+
+- [ ] Add `activeView` state with values `chat` and `rag`.
+- [ ] Replace the current single `.container` card layout with a full-height app shell.
+- [ ] Add first-level navigation in the left sidebar: `聊天`, `RAG 管理`.
+- [ ] When `activeView === "chat"`, show session controls and session list in the left sidebar.
+- [ ] When `activeView === "rag"`, hide the session list and show a compact RAG section label or RAG secondary nav.
+- [ ] Move tenant/user/stream settings out of `SessionSidebar.vue` into `SettingsModal.vue`.
+- [ ] Keep `tenantId`, `userId`, and `streamMode` in `App.vue` so both views share the same state.
+
+### Task R2: Simplify Chat UI
+
+**Files:**
+- Modify: `/frontend/src/components/ChatArea.vue`
+- Modify: `/frontend/src/composables/useChat.js`
+- Modify: `/frontend/src/utils/api.js`
+- Remove or orphan after verification: `/frontend/src/components/AgentSelector.vue`
+- Remove or orphan after verification: `/frontend/src/composables/useAgents.js`
+
+- [ ] Remove `AgentSelector` import and component usage from `ChatArea.vue`.
+- [ ] Remove `currentAgent` prop and `agentChanged` emit from `ChatArea.vue`.
+- [ ] Use a fixed input placeholder: `输入消息...`.
+- [ ] Keep the current session title in the header.
+- [ ] Keep online/offline status.
+- [ ] Remove visible agent badge/title/prompt behavior from the chat page.
+- [ ] Ensure chat send payload no longer depends on user-selected agent.
+- [ ] If backend still requires an agent field temporarily, set it in the API compatibility layer without exposing it in UI.
+- [ ] Preserve streaming and non-streaming message behavior.
+
+### Task R3: Sidebar Session Behavior
+
+**Files:**
+- Modify or replace: `/frontend/src/components/SessionSidebar.vue`
+- Modify: `/frontend/src/components/SessionItem.vue`
+
+- [ ] Preserve new chat.
+- [ ] Preserve session history list.
+- [ ] Preserve switch session.
+- [ ] Preserve rename session.
+- [ ] Preserve delete session.
+- [ ] Preserve pin/unpin if already working.
+- [ ] Remove inline tenant and user settings from the sidebar.
+- [ ] Add a settings button that opens `SettingsModal.vue`.
+
+### Task R4: RAG Management View Entry
+
+**Files:**
+- Create: `/frontend/src/components/rag/RagConsole.vue`
+- Create: `/frontend/src/utils/ragApi.js`
+- Modify: `/frontend/src/App.vue`
+
+- [ ] Render `RagConsole` when `activeView === "rag"`.
+- [ ] Pass shared `tenantId` into `RagConsole`.
+- [ ] Create `ragApi.js` wrappers for existing RAG endpoints.
+- [ ] Add tabs inside `RagConsole`: 总览, 文档接入, 文档管理, 检索调试, 索引监控, 质量反馈, 配置.
+- [ ] Keep RAG management visually distinct from chat: dense tables, compact forms, full-height workspace.
+
+### Task R5: RAG Ingestion
+
+**Files:**
+- Create: `/frontend/src/components/rag/RagIngestion.vue`
+- Create: `/frontend/src/components/rag/SingleUploadPanel.vue`
+- Create: `/frontend/src/components/rag/BatchImportPanel.vue`
+
+- [ ] Implement single-file upload via `POST /api/v1/rag/documents/upload`.
+- [ ] Implement server-directory dry-run via `POST /api/v1/rag/documents/batch-import` with `dry_run=true`.
+- [ ] Implement confirmed batch import with `dry_run=false`.
+- [ ] Display per-file result status: imported, skipped, failed, would_import.
+- [ ] Display file MD5, source path, storage path, doc_id, and failure reason.
+- [ ] Use shared `tenantId` by default and do not duplicate tenant selectors inside every form unless needed.
+
+### Task R6: RAG Monitoring And Debugging
+
+**Files:**
+- Create: `/frontend/src/components/rag/RagDashboard.vue`
+- Create: `/frontend/src/components/rag/RagIndexMonitor.vue`
+- Create: `/frontend/src/components/rag/RagRetrievalLab.vue`
+- Create: `/frontend/src/components/rag/RagQualityPanel.vue`
+
+- [ ] Implement index status cards from `GET /api/v1/rag/index/status`.
+- [ ] Implement index queue table from `GET /api/v1/rag/index/queue`.
+- [ ] Add manual refresh and optional 5s polling while the monitor tab is active.
+- [ ] Implement retrieval testing via `POST /api/v1/rag/search`.
+- [ ] Implement ask testing via `POST /api/v1/rag/ask`.
+- [ ] Display source metadata and chunk scores clearly.
+- [ ] Implement quality metrics via `GET /api/v1/rag/quality`.
+
+### Task R7: Backend Compatibility Checklist
+
+These backend issues must be fixed before the RAG management frontend can be considered complete:
+
+- [ ] `GET /api/v1/rag/documents` must map `page/page_size` to `limit/offset` or update `DocumentManager.list_documents`.
+- [ ] `POST /api/v1/rag/feedback` must accept/use `tenant_id` instead of hardcoding `default`.
+- [ ] Add `GET /api/v1/rag/config` for current RAG settings.
+- [ ] Add `GET /api/v1/rag/documents/{doc_id}/chunks` for document detail inspection.
+- [ ] Add `POST /api/v1/rag/documents/{doc_id}/reindex` or equivalent queue task creation.
+
+### Revised Verification
+
+- [ ] `npm run build` succeeds.
+- [ ] Chat page has no visible agent selector.
+- [ ] Chat page still supports new chat, session history, rename, delete, and send message.
+- [ ] Chat payload does not depend on user-selected agent.
+- [ ] Settings modal updates tenant, user ID, and stream mode.
+- [ ] Switching to `RAG 管理` does not lose chat session state.
+- [ ] RAG management uses the same tenant shown in settings.
+- [ ] Single-file upload works for supported text files.
+- [ ] Batch import dry-run and confirmed import both render per-file results.
+- [ ] Index status and queue render and refresh.
+- [ ] Retrieval test and ask test render sources.
+
+### Revised Success Criteria
+
+Upon completion, the following must be true:
+
+1. Vue app uses a full-height workspace shell with first-level `聊天 / RAG 管理` navigation.
+2. Chat UI is simplified and ChatGPT-like: no visible agent selector, no agent prompt selector, no decorative agent controls.
+3. Backend supervisor owns routing; the frontend does not expose agent selection.
+4. Tenant and user settings are centralized in a settings modal.
+5. RAG management is reachable as a new menu and supports upload, batch import, index monitoring, and retrieval debugging.
+6. Production build succeeds without console errors in normal use.

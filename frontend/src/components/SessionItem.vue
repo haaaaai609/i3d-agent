@@ -5,7 +5,7 @@
     @click="$emit('click', session.sessionId)"
   >
     <div class="session-main">
-      <span class="session-icon">{{ getAgentIcon(session.agentType) }}</span>
+      <span class="session-icon">💬</span>
       <span class="session-title">{{ session.title }}</span>
       <span v-if="session.isPinned" class="pin-icon">📌</span>
     </div>
@@ -25,19 +25,13 @@
 </template>
 
 <script setup>
-import { AGENTS } from '../composables/useAgents.js'
-
-const props = defineProps({
+defineProps({
   session: { type: Object, required: true },
   isActive: { type: Boolean, default: false },
   showActions: { type: Boolean, default: false }
 })
 
 defineEmits(['click', 'rename', 'togglePin', 'delete'])
-
-function getAgentIcon(agentType) {
-  return AGENTS[agentType]?.icon || '💬'
-}
 </script>
 
 <style scoped>
@@ -53,11 +47,12 @@ function getAgentIcon(agentType) {
 }
 
 .session-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(17, 24, 39, 0.06);
 }
 
 .session-item.active {
-  background: rgba(102, 126, 234, 0.3);
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #d1d5db;
 }
 
 .session-item.pinned {
@@ -80,7 +75,7 @@ function getAgentIcon(agentType) {
 .session-title {
   flex: 1;
   font-size: 14px;
-  color: white;
+  color: #111827;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -106,7 +101,7 @@ function getAgentIcon(agentType) {
   width: 28px;
   height: 28px;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
+  background: transparent;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
@@ -114,7 +109,7 @@ function getAgentIcon(agentType) {
 }
 
 .action-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(17, 24, 39, 0.08);
   transform: scale(1.1);
 }
 

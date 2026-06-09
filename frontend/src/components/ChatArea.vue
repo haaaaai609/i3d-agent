@@ -3,25 +3,10 @@
     <div class="chat-header">
       <div class="header-left">
         <h2>{{ sessionTitle }}</h2>
-        <AgentSelector
-          :current-agent="currentAgent"
-          @agent-changed="$emit('agentChanged', $event)"
-        />
       </div>
 
-      <div style="display: flex; align-items: center; gap: 15px;">
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
-          <input
-            type="checkbox"
-            :checked="streamMode"
-            @change="$emit('streamModeToggle')"
-            style="cursor: pointer;"
-          >
-          <span>流式输出</span>
-        </label>
-        <div :class="['status', { offline: !isOnline }]">
-          {{ isOnline ? '在线' : '离线' }}
-        </div>
+      <div :class="['status', { offline: !isOnline }]">
+        {{ isOnline ? '在线' : '离线' }}
       </div>
     </div>
 
@@ -32,7 +17,7 @@
     />
 
     <InputArea
-      :placeholder="getInputPlaceholder()"
+      placeholder="输入消息..."
       :disabled="isTyping"
       @send="handleSend"
     />
@@ -40,37 +25,27 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { AGENTS } from '../composables/useAgents.js'
-import AgentSelector from './AgentSelector.vue'
+import { ref, onMounted } from 'vue'
 import MessageList from './MessageList.vue'
 import InputArea from './InputArea.vue'
 import { checkHealth } from '../utils/api.js'
 
 const props = defineProps({
   sessionTitle: { type: String, default: '新对话' },
-  currentAgent: { type: String, default: 'general' },
   tenantId: { type: String, default: 'huabei' },
   userId: { type: String, default: 'demo_user' },
-  streamMode: { type: Boolean, default: true },
   messages: { type: Array, default: () => [] },
   isTyping: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['agentChanged', 'streamModeToggle', 'sendMessage'])
+const emit = defineEmits(['sendMessage'])
 
 const isOnline = ref(true)
-
-const agentConfig = computed(() => AGENTS[props.currentAgent])
 
 onMounted(async () => {
   const health = await checkHealth()
   isOnline.value = health !== null
 })
-
-function getInputPlaceholder() {
-  return agentConfig.value?.prompt || '输入消息...'
-}
 
 function handleQuickAction(action) {
   emit('sendMessage', action)
@@ -86,15 +61,17 @@ function handleSend(data) {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  background: #fff;
 }
 
 .chat-header {
-  padding: 16px 20px;
+  padding: 14px 24px;
   border-bottom: 1px solid #e5e7eb;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  min-height: 60px;
+  min-height: 58px;
 }
 
 .header-left {
@@ -108,13 +85,13 @@ function handleSend(data) {
 }
 
 .chat-header h2 {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 150px;
+  max-width: 520px;
   flex-shrink: 0;
 }
 

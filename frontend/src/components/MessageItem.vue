@@ -2,10 +2,6 @@
   <div :class="['message', message.type]">
     <div v-if="message.type === 'assistant'" class="message-header">
       <span>I3D Assistant</span>
-      <span :class="['agent-badge', (message.agentType || 'supervisor').toLowerCase()]">
-        {{ message.agentType || 'supervisor' }}
-      </span>
-      <span>{{ new Date().toLocaleTimeString() }}</span>
     </div>
 
     <div class="message-content">
@@ -137,7 +133,8 @@ function renderMarkdown(markdown) {
 
 <style scoped>
 .message {
-  margin-bottom: 20px;
+  margin: 0 auto 22px;
+  max-width: 860px;
 }
 
 .message.user {
@@ -146,7 +143,7 @@ function renderMarkdown(markdown) {
 }
 
 .message-content {
-  max-width: 70%;
+  max-width: 78%;
   padding: 12px 16px;
   border-radius: 12px;
 }
@@ -158,10 +155,11 @@ function renderMarkdown(markdown) {
 }
 
 .message.assistant .message-content {
-  background: white;
+  max-width: 100%;
+  background: #fff;
   color: #1f2937;
-  border: 1px solid #e5e7eb;
-  border-bottom-left-radius: 4px;
+  border: none;
+  padding-left: 0;
 }
 
 .message-header {
@@ -170,20 +168,9 @@ function renderMarkdown(markdown) {
   gap: 8px;
   margin-bottom: 8px;
   font-size: 12px;
-  color: #6b7280;
-}
-
-.agent-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 10px;
+  color: #374151;
   font-weight: 600;
 }
-
-.agent-badge.search { background: #dbeafe; color: #1e40af; }
-.agent-badge.rag { background: #fef3c7; color: #92400e; }
-.agent-badge.process { background: #e0e7ff; color: #3730a3; }
-.agent-badge.supervisor { background: #f3e8ff; color: #6b21a8; }
 
 .message-text {
   line-height: 1.6;

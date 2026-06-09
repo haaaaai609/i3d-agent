@@ -106,6 +106,38 @@ def _source_type_from_name(filename: str) -> str:
     return suffix or "txt"
 
 
+def _serialize_record(row) -> Dict:
+    """Convert asyncpg records and nested values to JSON-safe dicts."""
+    result = dict(row)
+    for key, value in list(result.items()):
+        if hasattr(value, "isoformat"):
+            result[key] = value.isoformat()
+        elif isinstance(value, (str, int, float, bool, dict, list)) or value is None:
+            result[key] = value
+        else:
+            result[key] = str(value)
+    return result
+
+
+@router.get("/config")
+async def get_rag_config():
+    """Get read-only RAG runtime configuration for the management UI."""
+    return {
+        "embedding_provider": settings.EMBEDDING_PROVIDER,
+        "embedding_base_url": settings.EMBEDDING_BASE_URL,
+        "embedding_model": settings.EMBEDDING_MODEL,
+        "vector_dimension": settings.VECTOR_DIMENSION,
+        "chunk_size_default": settings.CHUNK_SIZE_DEFAULT,
+        "chunk_overlap_default": settings.CHUNK_OVERLAP_DEFAULT,
+        "rerank_provider": settings.RERANK_PROVIDER,
+        "rerank_model": settings.RERANK_MODEL,
+        "agentic_enable_hyde": settings.AGENTIC_ENABLE_HYDE,
+        "agentic_enable_rerank": settings.AGENTIC_ENABLE_RERANK,
+        "rag_import_roots": settings.rag_import_roots_list,
+        "supported_file_extensions": [".md", ".txt", ".json", ".html", ".htm"],
+    }
+
+
 @router.post("/documents", response_model=DocumentResponse)
 async def create_document(
     request: DocumentCreate,
@@ -370,6 +402,90 @@ async def get_document_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/documents/{doc_id}/chunks")
+async def get_document_chunks(
+    doc_id: str,
+    tenant_id: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """Get chunks for one document."""
+    try:
+        conditions = ["doc_id = $1", "deleted_at IS NULL"]
+        params = [doc_id]
+        param_count = 2
+
+        if tenant_id:
+            conditions.append(f"tenant_id = ${param_count}")
+            params.append(tenant_id)
+            param_count += 1
+
+        count_query = f"""
+            SELECT COUNT(*)
+            FROM rag_chunks
+            WHERE {' AND '.join(conditions)}
+        """
+        total = await pool.fetchval(count_query, *params)
+
+        query = f"""
+            SELECT id, doc_id, tenant_id, content, chunk_index, token_count,
+                   metadata, doc_version, created_at
+            FROM rag_chunks
+            WHERE {' AND '.join(conditions)}
+            ORDER BY chunk_index ASC
+            LIMIT ${param_count} OFFSET ${param_count + 1}
+        """
+        rows = await pool.fetch(query, *params, limit, offset)
+        return {
+            "items": [_serialize_record(row) for row in rows],
+            "total": total or 0,
+            "limit": limit,
+            "offset": offset
+        }
+    except Exception as e:
+        logger.error(f"Failed to get document chunks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documents/{doc_id}/reindex")
+async def reindex_document(
+    doc_id: str,
+    tenant_id: str,
+    priority: int = 5,
+    pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """Queue a document for reindexing."""
+    try:
+        doc = await pool.fetchrow(
+            """
+            SELECT id FROM rag_documents
+            WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+            """,
+            doc_id,
+            tenant_id
+        )
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        task = await pool.fetchrow(
+            """
+            INSERT INTO rag_index_queue (doc_id, tenant_id, operation, priority, status)
+            VALUES ($1, $2, 'update', $3, 'pending')
+            RETURNING id, doc_id, tenant_id, operation, priority, status, created_at
+            """,
+            doc_id,
+            tenant_id,
+            priority
+        )
+        return {"task": _serialize_record(task)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to queue reindex: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/documents")
 async def list_documents(
     tenant_id: str,
@@ -380,13 +496,21 @@ async def list_documents(
 ):
     """列出文档（分页）"""
     try:
+        page = max(page, 1)
+        page_size = max(min(page_size, 100), 1)
+        offset = (page - 1) * page_size
         result = await document_manager.list_documents(
             tenant_id=tenant_id,
             doc_type=doc_type,
-            page=page,
-            page_size=page_size
+            limit=page_size,
+            offset=offset
         )
-        return result
+        return {
+            "items": result,
+            "page": page,
+            "page_size": page_size,
+            "count": len(result)
+        }
     except Exception as e:
         logger.error(f"Failed to list documents: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -583,7 +707,7 @@ async def get_index_queue(
         params.append(limit)
 
         rows = await pool.fetch(query, *params)
-        return {"tasks": [dict(row) for row in rows]}
+        return {"tasks": [_serialize_record(row) for row in rows]}
 
     except Exception as e:
         logger.error(f"Failed to get index queue: {e}")
@@ -629,7 +753,7 @@ async def submit_feedback(
     """提交质量反馈"""
     try:
         await monitor.save_feedback(
-            tenant_id="default",  # TODO: 从请求中获取
+            tenant_id=request.tenant_id,
             session_id=request.session_id,
             query=request.query,
             retrieved_doc_ids=request.retrieved_doc_ids,

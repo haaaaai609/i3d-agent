@@ -148,6 +148,7 @@ class AskRequest(BaseModel):
 
 class FeedbackRequest(BaseModel):
     """质量反馈请求"""
+    tenant_id: str = Field("default", description="租户 ID")
     session_id: str
     query: str
     retrieved_doc_ids: Optional[List[str]] = None

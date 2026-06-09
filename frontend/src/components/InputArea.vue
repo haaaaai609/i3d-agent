@@ -1,31 +1,33 @@
 <template>
   <div class="input-area">
-    <div v-if="attachedFile" class="file-preview">
-      <span class="name">📎 {{ attachedFile.name }}</span>
-      <span class="remove" @click="removeFile">✕</span>
-    </div>
-    <div class="input-wrapper">
-      <div class="input-box">
-        <textarea
-          ref="textareaRef"
-          :value="inputText"
-          :placeholder="placeholder"
-          :disabled="disabled"
-          @input="inputText = $event.target.value"
-          @keydown="handleKeydown"
-          class="message-input"
-        ></textarea>
-        <button class="attach-btn" @click="triggerFileInput" title="上传文件">📎</button>
-        <input
-          ref="fileInputRef"
-          type="file"
-          style="display: none"
-          @change="handleFileSelect"
-        >
+    <div class="input-shell">
+      <div v-if="attachedFile" class="file-preview">
+        <span class="name">📎 {{ attachedFile.name }}</span>
+        <span class="remove" @click="removeFile">✕</span>
       </div>
-      <button class="send-btn" @click="send" :disabled="disabled || !inputText.trim()">
-        ➤
-      </button>
+      <div class="input-wrapper">
+        <div class="input-box">
+          <textarea
+            ref="textareaRef"
+            :value="inputText"
+            :placeholder="placeholder"
+            :disabled="disabled"
+            @input="inputText = $event.target.value"
+            @keydown="handleKeydown"
+            class="message-input"
+          ></textarea>
+          <button class="attach-btn" @click="triggerFileInput" title="上传文件">📎</button>
+          <input
+            ref="fileInputRef"
+            type="file"
+            style="display: none"
+            @change="handleFileSelect"
+          >
+        </div>
+        <button class="send-btn" @click="send" :disabled="disabled || !inputText.trim()">
+          ➤
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -90,9 +92,18 @@ function removeFile() {
 
 <style scoped>
 .input-area {
-  padding: 20px;
+  padding: 16px 24px 24px;
   background: white;
-  border-top: 1px solid #e5e7eb;
+}
+
+.input-shell {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.08);
 }
 
 .input-wrapper {
@@ -108,11 +119,11 @@ function removeFile() {
 
 .message-input {
   width: 100%;
-  min-height: 50px;
+  min-height: 44px;
   max-height: 150px;
-  padding: 12px 50px 12px 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  padding: 10px 44px 10px 8px;
+  border: 0;
+  border-radius: 8px;
   resize: none;
   font-size: 14px;
   font-family: inherit;
@@ -120,7 +131,6 @@ function removeFile() {
 
 .message-input:focus {
   outline: none;
-  border-color: #667eea;
 }
 
 .attach-btn {
@@ -142,11 +152,11 @@ function removeFile() {
 }
 
 .send-btn {
-  width: 50px;
-  height: 50px;
+  width: 42px;
+  height: 42px;
   border: none;
-  border-radius: 12px;
-  background: #667eea;
+  border-radius: 9px;
+  background: #111827;
   color: white;
   font-size: 20px;
   cursor: pointer;
@@ -154,7 +164,7 @@ function removeFile() {
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #5568d3;
+  background: #000;
   transform: scale(1.05);
 }
 

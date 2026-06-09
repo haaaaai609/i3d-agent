@@ -49,8 +49,8 @@ watch(() => [...props.messages, props.isTyping], () => {
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
-  background: #f9fafb;
+  padding: 28px 24px;
+  background: #fff;
 }
 
 .messages::-webkit-scrollbar {

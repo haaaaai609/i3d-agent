@@ -28,14 +28,13 @@ export function useSessions() {
   }
 
   // 创建新会话
-  function createSession(agentType = 'general') {
+  function createSession() {
     const sessionId = nanoid()
     const newSession = {
       sessionId,
       title: '新对话',
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      agentType,
       messageCount: 0,
       isPinned: false
     }

@@ -1,44 +1,63 @@
 <template>
-  <div class="container">
-    <SessionSidebar
+  <div class="app-shell">
+    <AppSidebar
+      :active-view="activeView"
       :sessions="sessions"
       :active-session-id="activeSessionId"
       :tenant-id="tenantId"
       :user-id="userId"
+      @view-changed="activeView = $event"
       @new-chat="handleNewChat"
       @switch-session="handleSwitchSession"
       @rename-session="handleRenameSession"
       @toggle-pin="handleTogglePin"
       @delete-session="handleDeleteSession"
-      @tenant-changed="handleTenantChanged"
-      @user-id-changed="handleUserIdChanged"
+      @open-settings="isSettingsOpen = true"
     />
-    <ChatArea
-      :session-title="currentSession?.title || '新对话'"
-      :current-agent="currentAgent"
+
+    <main class="main-panel">
+      <ChatArea
+        v-if="activeView === 'chat'"
+        :session-title="currentSession?.title || '新对话'"
+        :tenant-id="tenantId"
+        :user-id="userId"
+        :messages="messages"
+        :is-typing="isTyping"
+        @send-message="handleSendMessage"
+      />
+      <RagConsole
+        v-else
+        :tenant-id="tenantId"
+      />
+    </main>
+
+    <SettingsModal
+      :open="isSettingsOpen"
       :tenant-id="tenantId"
       :user-id="userId"
       :stream-mode="streamMode"
-      :messages="messages"
-      :is-typing="isTyping"
-      @agent-changed="handleAgentChanged"
-      @stream-mode-toggle="streamMode = !streamMode"
-      @send-message="handleSendMessage"
+      @close="isSettingsOpen = false"
+      @tenant-changed="handleTenantChanged"
+      @user-id-changed="handleUserIdChanged"
+      @stream-mode-changed="streamMode = $event"
     />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import SessionSidebar from './components/SessionSidebar.vue'
+import AppSidebar from './components/AppSidebar.vue'
+import SettingsModal from './components/SettingsModal.vue'
 import ChatArea from './components/ChatArea.vue'
+import RagConsole from './components/rag/RagConsole.vue'
 import { useSessions } from './composables/useSessions.js'
 import { useChat } from './composables/useChat.js'
 
 const tenantId = ref('huabei')
 const userId = ref('demo_user')
 const streamMode = ref(true)
-const currentAgent = ref('general')
+const activeView = ref('chat')
+const isSettingsOpen = ref(false)
 
 // 会话管理
 const {
@@ -72,7 +91,8 @@ function handleSwitchSession(sessionId) {
 
 // 新建会话
 function handleNewChat() {
-  createSession(currentAgent.value)
+  createSession()
+  activeView.value = 'chat'
 }
 
 // 重命名会话
@@ -95,14 +115,6 @@ function handleDeleteSession(sessionId) {
     if (confirm(`确定要删除会话 "${session.title}" 吗？`)) {
       deleteSession(sessionId)
     }
-  }
-}
-
-// 切换 Agent
-function handleAgentChanged(agent) {
-  currentAgent.value = agent
-  if (currentSession.value) {
-    updateSessionMeta(currentSession.value.sessionId, { agentType: agent })
   }
 }
 
@@ -152,15 +164,18 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.container {
-  width: 95%;
-  max-width: 1200px;
-  height: 90vh;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+.app-shell {
+  width: 100%;
+  height: 100vh;
   display: flex;
   overflow: hidden;
-  margin: 5vh auto;
+  background: #fff;
+}
+
+.main-panel {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
 }
 </style>

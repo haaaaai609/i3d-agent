@@ -82,7 +82,6 @@ export function useChat(sessionId) {
                 id: assistantMessageId,
                 type: 'assistant',
                 content: fullContent,
-                agentType: 'supervisor',
                 timestamp: Date.now()
               })
             }
@@ -96,19 +95,18 @@ export function useChat(sessionId) {
             }
           },
           (error) => {
-            addMessage('assistant', `❌ 错误: ${error}`, { agentType: 'supervisor' })
+            addMessage('assistant', `❌ 错误: ${error}`)
           }
         )
       } else {
         const data = await sendChatMessage(payload)
         addMessage('assistant', data.response || '处理完成', {
-          agentType: data.metadata?.agent || 'supervisor',
           sources: data.sources || [],
-          thoughtProcess: data.thought_process || []
+          thoughtProcess: Array.isArray(data.thought_process) ? data.thought_process : []
         })
       }
     } catch (error) {
-      addMessage('assistant', `❌ 错误: ${error.message}`, { agentType: 'supervisor' })
+      addMessage('assistant', `❌ 错误: ${error.message}`)
     } finally {
       isTyping.value = false
       // Clear attached file

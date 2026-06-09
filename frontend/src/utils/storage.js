@@ -71,7 +71,6 @@ export class StorageManager {
     const data = localStorage.getItem(STORAGE_KEYS.PREFERENCES)
     const defaults = {
       defaultTenant: 'huabei',
-      defaultAgent: 'general',
       theme: 'light',
       language: 'zh-CN',
       pinnedSessions: []
