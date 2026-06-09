@@ -1,8 +1,10 @@
 # I3D 系统 Agent 架构设计方案
 
 > 设计时间: 2026-05-26
-> 版本: v1.0
+> 版本: v1.1
 > 基于: AGENT_COMPREHENSIVE_RESEARCH.md
+> 最近更新: 2026-06-09
+> 本次更新: 同步多 Agent 编排演进设计，后续实施以 `docs/superpowers/plans/2026-06-09-multi-agent-orchestration-improvement.md` 为准
 
 ---
 
@@ -148,6 +150,59 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### 2.1.1 多 Agent 编排演进目标
+
+当前实现已经具备 LangGraph 工作流骨架，但运行形态更接近“Supervisor 单意图路由到单个专业 Agent”。为提升复杂任务协作效率，编排层需要从单路由模式演进为任务计划、依赖调度、并行执行、共享产物和质量校验的协作闭环。
+
+目标编排链路：
+
+```
+Chat API
+  |
+  v
+Context Loader
+  |
+  v
+Planner / Supervisor
+  |    - 意图识别
+  |    - 复杂任务拆解
+  |    - 缺失参数检测
+  |    - 任务依赖图生成
+  v
+Dependency-aware Dispatcher
+  |    - ready task 选择
+  |    - 并行批次执行
+  |    - retry / degrade 策略
+  v
+Domain Agents
+  |    - SearchAgent
+  |    - RAGAgent
+  |    - ProcessAgent
+  v
+Artifact Blackboard
+  |    - 标准化 Agent 输出
+  |    - 部分结果与错误
+  |    - provenance 与 confidence
+  v
+Synthesizer
+  |
+  v
+Verifier
+  |    - 来源覆盖检查
+  |    - 结果冲突检查
+  |    - 缺失参数检查
+  v
+Final Response
+```
+
+演进原则：
+
+1. **保留 LangGraph**：不整体迁移框架，在现有 StateGraph 上增量增加 Planner、Dispatcher、Artifact、Synthesizer、Verifier。
+2. **简单请求快速路径**：单 Search/RAG/Process 查询仍保持低延迟直接执行。
+3. **复杂请求任务 DAG**：多意图请求生成多个 `SubTask`，使用依赖关系决定串行或并行。
+4. **Agent 通过结构化产物协作**：专业 Agent 不直接拼接自然语言中间结果，而是输出统一 `Artifact`。
+5. **综合与校验分离**：Synthesizer 负责组织最终回答，Verifier 负责来源、冲突、缺参和质量检查。
+
 ### 2.2 技术选型
 
 | 组件 | 技术选型 | 版本 | 理由 |
@@ -170,21 +225,22 @@
 ```python
 class SupervisorAgent:
     """
-    监督者 Agent - 负责任务分解、路由和协调
+    监督者 / Planner Agent - 负责任务理解、拆解、依赖规划和协调
     """
 
-    role = "任务协调专家"
-    goal = "理解用户需求，协调专业 Agent 完成任务"
+    role = "任务规划与协调专家"
+    goal = "理解用户需求，生成可执行任务计划，并协调专业 Agent 完成任务"
     backstory = """
     你是 I3D 系统的智能协调者，精通 3D CAD 领域知识。
     你能够：
     - 理解用户的自然语言查询
-    - 判断任务类型并路由到合适的 Agent
-    - 协调多个 Agent 协作完成复杂任务
-    - 汇总结果并以清晰的方式呈现
+    - 判断单意图或多意图任务
+    - 将复杂需求拆解为多个 SubTask
+    - 判断任务依赖、可并行性和缺失参数
+    - 协调多个专业 Agent 协作完成复杂任务
     """
 
-    # 路由规则
+    # 兼容快速路径的路由规则
     routing_rules = {
         "search": ["搜索", "查找", "相似", "匹配", "推荐"],
         "rag": ["文档", "手册", "教程", "API", "使用"],
@@ -192,14 +248,47 @@ class SupervisorAgent:
         "general": ["你好", "帮助", "是什么"]
     }
 
+    # 计划能力
+    planning_capabilities = {
+        "single_intent_fast_path": "高置信单意图直接生成单个任务",
+        "multi_intent_decomposition": "复杂请求拆解为任务 DAG",
+        "dependency_analysis": "识别可并行任务和前后依赖",
+        "slot_detection": "识别 task_id、item_code、search_type 等缺失参数",
+        "fallback": "LLM 计划失败时回退确定性规则"
+    }
+
     # 支持的工具
     tools = [
         route_to_search_agent,
         route_to_rag_agent,
         route_to_process_agent,
+        create_task_plan,
+        request_clarification,
         handle_general_query
     ]
 ```
+
+Supervisor 的输出不再只是一组 `task_type/agent` 字段，而应演进为结构化 `TaskPlan`：
+
+```python
+class TaskPlan:
+    plan_id: str
+    query: str
+    intent_types: list[str]
+    tasks: list[SubTask]
+    missing_slots: list[dict]
+    can_parallelize: bool
+    confidence: float
+```
+
+示例：
+
+| 用户请求 | 计划结果 |
+|---------|---------|
+| `搜索螺栓` | 1 个 search task，走快速路径 |
+| `搜索螺栓并告诉我 API 怎么用` | search + rag，两个任务可并行 |
+| `查询 task_123 状态并解释失败原因` | process -> rag，rag 依赖 process 结果 |
+| `查询处理进度` | process task 缺少 `task_id/item_code`，先触发澄清 |
 
 ### 3.2 Search Agent (搜索专家)
 
@@ -328,6 +417,66 @@ class ProcessAgent:
         diagnose_error
     ]
 ```
+
+### 3.5 Artifact Blackboard (共享产物层)
+
+Artifact Blackboard 不是一个直接面向用户的 Agent，而是多 Agent 协作的数据契约层。每个专业 Agent 完成任务后，都要输出结构化产物，供后续 Synthesizer、Verifier 或依赖任务读取。
+
+```python
+class Artifact:
+    artifact_id: str
+    task_id: str
+    artifact_type: str  # search_results | rag_answer | process_status | warning | verification
+    content: dict
+    provenance: dict
+    confidence: float | None
+```
+
+标准产物类型：
+
+| artifact_type | 生产者 | 主要内容 | 用途 |
+|---------------|--------|----------|------|
+| `search_results` | SearchAgent | results、count、search_type、query | 结果展示、后续文档解释 |
+| `rag_answer` | RAGAgent | answer、sources、retrieval_metadata | 技术解释、引用来源 |
+| `process_status` | ProcessAgent | status、progress、task_id、details | 状态汇报、失败原因分析 |
+| `warning` | ErrorHandler | failed_task、error_type、message | 部分降级提示 |
+| `verification` | Verifier | passed、issues、confidence | 最终质量记录 |
+
+### 3.6 Synthesizer (综合生成器)
+
+Synthesizer 负责把多个 Agent 的结构化产物组织成面向用户的最终回答。它替代当前仅按任务类型拼接文本的 Aggregator，但迁移期间可以沿用 `aggregator.py` 文件名并逐步扩展职责。
+
+综合策略：
+
+- 单 Search：返回简洁结果列表和必要筛选条件。
+- 单 RAG：返回答案和来源。
+- 单 Process：返回状态、进度和下一步建议。
+- Search + RAG：先给结论，再列搜索结果，再补充文档依据。
+- Process + RAG：先给状态，再基于文档解释原因或处理建议。
+- 存在 warning：保留已完成结果，并明确说明哪些服务不可用。
+
+Synthesizer 不负责判断事实正确性，只负责组织结构、语言和展示顺序。
+
+### 3.7 Verifier (质量校验器)
+
+Verifier 负责最终回答前的规则校验和可选 LLM 校验，避免多 Agent 输出被直接拼接后产生不完整、无来源或互相矛盾的回答。
+
+```python
+class VerificationResult:
+    passed: bool
+    issues: list[dict]
+    requires_clarification: bool
+    requires_retry: bool
+    confidence: float
+```
+
+规则校验 v1：
+
+- RAG 有答案但 sources 为空时添加 warning。
+- 用户要求查询状态但没有 `process_status` artifact 时 fail 或 clarification。
+- Search 结果为空时明确说明无结果，不编造。
+- 多个 artifact 信息冲突时记录 issue。
+- 缺少 `task_id`、`item_code` 等必要参数时触发 clarification。
 
 ---
 
@@ -1507,6 +1656,177 @@ def create_agent_graph():
     return workflow.compile()
 ```
 
+### 7.3 当前实现差距
+
+截至 2026-06-09，代码实现与目标多 Agent 协作设计存在以下差距：
+
+| 设计目标 | 当前实现 | 影响 |
+|----------|----------|------|
+| Supervisor 负责任务拆解 | 每次只创建一个 `SubTask` | 复杂请求无法同时调用多个 Agent |
+| 支持任务依赖 | `SubTask.dependencies` 已定义但未参与调度 | 无法表达 `process -> rag` 这类链路 |
+| 支持并行执行 | Dispatcher 只取第一个 pending/running task | Search + RAG 等独立任务无法并行 |
+| 支持澄清回合 | `check_clarification_needed` 存在但未接入图 | 缺参时无法稳定恢复执行 |
+| 综合生成 | Aggregator 只做模板拼接 | 多 Agent 输出缺少融合、冲突处理和质量控制 |
+| 错误降级 | ErrorHandler 可设置降级响应，但可能被 Aggregator 覆盖 | 部分失败信息容易丢失 |
+| Process 参数 | Supervisor 写入 `query`，Process node 期望 `task_id/item_code` | 处理状态查询存在失败风险 |
+
+因此第七章原工作流图保留为基础版设计，后续实现应按 7.4-7.7 的演进设计推进。
+
+### 7.4 演进后状态定义
+
+```python
+class SubTask(BaseModel):
+    task_id: str
+    task_type: Literal["search", "rag", "process", "memory"]
+    agent: str
+    status: Literal["pending", "running", "completed", "failed", "needs_clarification"]
+    input_data: dict[str, Any]
+    output_data: dict[str, Any] | None = None
+    error_message: str | None = None
+    dependencies: list[str] = []
+    retry_count: int = 0
+
+    # 新增字段
+    priority: int = 0
+    required_artifacts: list[str] = []
+    produces: list[str] = []
+    confidence: float | None = None
+    created_by: str = "planner"
+
+
+class TaskPlan(BaseModel):
+    plan_id: str
+    query: str
+    intent_types: list[str]
+    tasks: list[SubTask]
+    missing_slots: list[dict[str, Any]]
+    can_parallelize: bool
+    confidence: float
+
+
+class Artifact(BaseModel):
+    artifact_id: str
+    task_id: str
+    artifact_type: Literal[
+        "search_results",
+        "rag_answer",
+        "process_status",
+        "warning",
+        "verification",
+    ]
+    content: dict[str, Any]
+    provenance: dict[str, Any] = {}
+    confidence: float | None = None
+
+
+class WorkflowState(TypedDict):
+    query: str
+    user_id: str
+    tenant_id: str
+    session_id: str
+    stream: bool
+    conversation_history: list[dict[str, Any]]
+
+    task_plan: TaskPlan | None
+    sub_tasks: list[SubTask]
+    artifacts: list[Artifact]
+    warnings: list[dict[str, Any]]
+    verification: dict[str, Any] | None
+
+    pending_clarification: ClarificationRequest | None
+    clarification_answer: str | None
+    error: ErrorInfo | None
+
+    response: str | None
+    sources: list[Any] | None
+    thought_process: str | None
+    metadata: dict[str, Any] | None
+    execution_trace: list[dict[str, Any]]
+```
+
+### 7.5 演进后工作流图
+
+```
+memory_agent
+  |
+  v
+planner_supervisor
+  |------------------------------|
+  | response?                    | general query
+  v                              |
+clarification_handler <----------| missing slots
+  |
+  v
+dispatcher
+  |------------------------------|
+  | ready tasks > 1              |
+  v                              v
+parallel_executor            single_domain_agent
+  |                              |
+  |                              v
+  |                           dispatcher
+  |                              |
+  |<-----------------------------|
+  |
+  v
+synthesizer
+  |
+  v
+verifier
+  |-----------|------------------|
+  | passed    | needs clarify    | retry/fail
+  v           v                  v
+END     clarification_handler  error_handler
+```
+
+核心路由规则：
+
+1. `planner_supervisor` 生成 `TaskPlan`，如果是普通对话可直接生成 response。
+2. `dispatcher` 使用 `get_ready_tasks()` 选择依赖已满足的 pending tasks。
+3. ready tasks 数量大于 1 时进入 `parallel_executor`，否则进入单个专业 agent。
+4. 每个专业 agent 完成后写入 `Artifact`，不直接生成最终 response。
+5. 所有任务完成或无可执行任务时进入 `synthesizer`。
+6. `verifier` 通过后结束；发现缺参进入澄清；发现可重试问题进入错误处理或调度。
+
+### 7.6 澄清回合设计
+
+澄清响应协议：
+
+```json
+{
+  "response": "需要补充信息：请提供任务 ID 或物料编码。",
+  "metadata": {
+    "needs_clarification": true,
+    "task_id": "task_xxx",
+    "question": "请提供 task_id 或 item_code",
+    "options": null
+  }
+}
+```
+
+执行要求：
+
+- Agent 或 Verifier 发现缺失参数时设置 `pending_clarification`。
+- 工作流返回澄清问题，不进入普通 Synthesizer。
+- 下一轮请求携带用户补充内容后，Supervisor 将原 task 从 `needs_clarification` 恢复为 `pending`。
+- 会话状态需要保存 pending clarification，保证跨请求恢复。
+
+### 7.7 并行与降级策略
+
+并行策略：
+
+- Search + RAG 默认可并行。
+- Process 状态查询与后续文档解释通常是 `process -> rag`。
+- 每轮并发数量受 `MAX_PARALLEL_AGENT_TASKS` 控制。
+- 外部服务调用必须设置 timeout。
+
+降级策略：
+
+- 单任务 critical error：直接失败。
+- 单任务 degradable error：返回明确服务不可用说明。
+- 多任务部分失败：保留成功 artifact，失败任务生成 warning，Synthesizer 在最终回答中说明。
+- retriable error：最多重试 3 次，超过后转 warning 或 fail。
+
 ---
 
 ## 八、API 接口设计
@@ -2636,6 +2956,93 @@ CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 - 部署配置
 - 上线验证
 
+### 11.4 多 Agent 编排演进专项计划
+
+> 详细执行清单见：`docs/superpowers/plans/2026-06-09-multi-agent-orchestration-improvement.md`
+
+本专项计划用于在现有 LangGraph 工作流基础上补齐多 Agent 协作能力，不替代 RAG 模块实施计划，而是在 RAG、Search、Process Agent 已具备基础能力后推进。
+
+#### Phase 0: 基线确认与保护网
+
+- 固化当前单意图路由行为。
+- 增加复杂意图当前限制测试。
+- 定义后续验收用例集，包括 Search + RAG、Process + RAG、澄清、降级、Verifier 等场景。
+
+#### Phase 1: 正确性修复
+
+- 修复 Process 任务输入解析，区分 `task_id`、`item_code` 和缺参澄清。
+- 接入澄清回合，保证缺参请求能返回问题并在下一轮恢复执行。
+- 修复降级错误聚合，避免 warning 或部分失败信息被覆盖。
+- 统一 `WorkflowState` 和 `ChatResponse.metadata` 的扩展字段。
+
+#### Phase 2: Planner 和多任务拆解
+
+- 定义 `TaskPlan` 模型。
+- 扩展 `SubTask` 字段，支持 priority、required_artifacts、produces、confidence。
+- 将 Supervisor 从关键词 Router 升级为 deterministic Planner v1。
+- 支持复杂请求生成多个 `SubTask` 和依赖关系。
+- 可选引入 LLM Planner，默认关闭，失败时回退规则 Planner。
+
+#### Phase 3: 依赖感知调度和并行执行
+
+- 实现 `get_ready_tasks(tasks)`。
+- 引入 `parallel_executor_node`。
+- Search + RAG 等无依赖任务并行执行。
+- Process -> RAG 等依赖任务按 DAG 顺序执行。
+- 增加执行轮次和并发上限保护。
+
+#### Phase 4: Artifact Blackboard
+
+- 定义 `Artifact` 模型。
+- SearchAgent 输出 `search_results` artifact。
+- RAGAgent 输出 `rag_answer` artifact。
+- ProcessAgent 输出 `process_status` artifact。
+- Aggregator/Synthesizer 迁移期间兼容 `task.output_data` 和 `artifacts`。
+
+#### Phase 5: Synthesizer 和 Verifier
+
+- 将 Aggregator 升级为 Synthesizer，按 artifact 综合最终回答。
+- 增加 Verifier 节点，检查来源、缺参、无结果和冲突。
+- Verifier 默认以 warning 为主，只有必要参数缺失或明确无法回答时阻断。
+
+#### Phase 6: 记忆、上下文和 Handoff
+
+- 明确 conversation_history、session_state、user_preferences、artifacts 的分层。
+- 保存 pending clarification 和最近 task plan。
+- 支持专业 Agent Handoff，例如连续文档追问交给 RAGAgent，连续状态排障交给 ProcessAgent。
+
+#### Phase 7: 可观测性、评估和性能
+
+- 增加 planner、dispatcher、agent、synthesizer、verifier 指标。
+- 建立 `tests/evals/multi_agent_cases.yaml` 离线评估集。
+- 配置 planner、agent、verifier 和总工作流 timeout。
+- 配置 `MAX_PARALLEL_AGENT_TASKS`，避免外部服务突刺。
+
+### 11.5 多 Agent 编排验收标准
+
+- 单 Search/RAG/Process 快速路径保持可用，响应格式不破坏前端。
+- Process 查询能正确区分 `task_id`、`item_code` 和缺参澄清。
+- 缺参请求能返回澄清问题，用户补充后继续原任务。
+- 复杂请求能生成多个 `SubTask`，并正确设置依赖。
+- 无依赖的多任务可以并行执行。
+- 有依赖的任务按 DAG 顺序执行。
+- 部分 Agent 失败时能保留已完成结果和 warning。
+- Synthesizer 能根据 artifact 生成统一答案，而不是简单拼接。
+- Verifier 能发现缺来源、无结果、缺状态等基础质量问题。
+- 工作流日志能追踪 request_id、plan_id、task_id、agent duration。
+
+### 11.6 多 Agent 编排回滚策略
+
+新增能力应通过配置开关控制：
+
+- `ENABLE_TASK_PLANNER`
+- `ENABLE_PARALLEL_EXECUTION`
+- `ENABLE_ARTIFACT_BLACKBOARD`
+- `ENABLE_VERIFIER`
+- `ENABLE_AGENT_HANDOFF`
+
+如线上异常，可关闭新能力退回当前单任务串行路径。
+
 ---
 
 ## 十二、总结
@@ -2647,12 +3054,18 @@ CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 1. **复用现有设施**: pgvector、Redis、PostgreSQL、RabbitMQ
 2. **多租户隔离**: 通过 RLS 和租户上下文实现
 3. **模块化设计**: Agent、工具、记忆系统、RAG 模块独立可测试
-4. **可观测性**: Arize Phoenix + Prometheus 集成
-5. **生产级**: 完整的错误处理、日志、监控
+4. **多 Agent 协作**: Planner、Dispatcher、Artifact、Synthesizer、Verifier 组成协作闭环
+5. **可观测性**: Arize Phoenix + Prometheus 集成
+6. **生产级**: 完整的错误处理、日志、监控和回滚开关
 
 ### 技术亮点
 
 - LangGraph 状态图编排
+- 任务 DAG 拆解与依赖感知调度
+- Search/RAG/Process 无依赖任务并行执行
+- Artifact Blackboard 结构化共享产物
+- Synthesizer + Verifier 分离最终生成和质量校验
+- 缺参澄清与专业 Agent Handoff
 - 三层记忆架构
 - **Agentic RAG**: 查询扩展、HyDE、重排序、多步推理
 - **混合检索**: 向量检索 + BM25 全文检索
@@ -2678,6 +3091,6 @@ CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 1. 评审本设计方案
 2. 确认技术选型和资源
-3. 启动阶段一开发（基础设施）
-4. 建立定期同步机制
-5. 准备 RAG 模块详细设计文档
+3. 按 `docs/superpowers/plans/2026-06-09-multi-agent-orchestration-improvement.md` 启动多 Agent 编排 Phase 0
+4. 优先修复 Process 输入、澄清回合、降级聚合等正确性问题
+5. 启动 Planner、依赖调度、Artifact、Synthesizer、Verifier 的阶段化改造

@@ -364,7 +364,7 @@ async def delete_document(
 ):
     """删除文档"""
     try:
-        await document_manager.delete_document(doc_id, hard_delete=hard_delete)
+        await document_manager.delete_document(doc_id, soft_delete=not hard_delete)
         return {"message": "Document deleted successfully"}
     except Exception as e:
         logger.error(f"Failed to delete document: {e}")
